@@ -69,6 +69,7 @@ GitHub Actions needs AWS credentials to create/destroy the EC2 instance.
 ### Alternative: Using Your Root Credentials (Quick but not recommended)
 
 For **MVP testing only**, you can use your root AWS credentials:
+
 - Go to AWS Console → Click your name (top right) → "Security credentials"
 - Create access key under "Access keys"
 - **NOT recommended for production** - create dedicated IAM user instead
@@ -78,8 +79,9 @@ For **MVP testing only**, you can use your root AWS credentials:
 ## Adding Credentials to GitHub
 
 Once you have:
+
 - ✅ VPC ID
-- ✅ Subnet ID  
+- ✅ Subnet ID
 - ✅ AWS Access Key ID
 - ✅ AWS Secret Access Key
 
@@ -90,14 +92,17 @@ Once you have:
 3. Click "New repository secret" and add:
 
 **Secret 1:**
+
 - Name: `AWS_ACCESS_KEY_ID`
 - Value: Your access key ID (AKIA...)
 
 **Secret 2:**
-- Name: `AWS_SECRET_ACCESS_KEY`  
+
+- Name: `AWS_SECRET_ACCESS_KEY`
 - Value: Your secret access key
 
 **Secret 3:**
+
 - Name: `AWS_REGION`
 - Value: `us-east-1` (or your preferred region)
 
@@ -211,17 +216,21 @@ terraform destroy
 ## Troubleshooting
 
 ### "No default VPC found"
+
 Run: `aws ec2 create-default-vpc`
 
 ### "Access Denied" errors
+
 - Check IAM user has correct permissions
 - Verify credentials are correct in GitHub secrets
 
 ### "Subnet has no internet gateway"
+
 - Use a public subnet (not private)
 - Ensure subnet has route to Internet Gateway (0.0.0.0/0 → igw-xxx)
 
 ### "Instance not accessible"
+
 - Check security group allows ports 3000, 9001 from your IP
 - Verify instance has public IP assigned
 - Wait 5-10 minutes for Docker containers to start
@@ -236,8 +245,8 @@ Run: `aws ec2 create-default-vpc`
 - **Total**: ~$35-40/month
 
 To save costs during testing:
+
 ```bash
 # Stop instance when not in use (keeps data, stops billing for compute)
 terraform destroy
 ```
-

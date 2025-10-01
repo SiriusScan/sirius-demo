@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.0.0"
 
   required_providers {
     aws = {
@@ -44,7 +44,7 @@ data "aws_ami" "ubuntu" {
 
 # Security Group for demo instance
 resource "aws_security_group" "demo" {
-  name_description = "sirius-demo-sg"
+  name        = "sirius-demo-sg"
   description = "Security group for SiriusScan demo environment"
   vpc_id      = var.vpc_id
 
