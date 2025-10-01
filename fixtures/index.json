@@ -1,0 +1,19 @@
+{
+  "description": "Ellingson Mineral Company Demo Environment",
+  "version": "1.0",
+  "last_updated": "2025-10-01",
+  "total_hosts": 1,
+  "environments": {
+    "it": 0,
+    "ot": 0
+  },
+  "fixtures": [
+    {
+      "file": "../data/host-record.json",
+      "description": "Lab Server (Example Host)",
+      "priority": 1,
+      "environment": "it"
+    }
+  ]
+}
+

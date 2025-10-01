@@ -1,0 +1,661 @@
+[
+  {
+    "id": "0",
+    "title": "PHASE 0: Project Foundation & Repository Setup",
+    "description": "Initialize repository structure, establish GitHub repository, and prepare development environment.",
+    "details": "Key Outputs: GitHub repository created, initial folder structure established, README and documentation templates in place, task management system active.",
+    "status": "pending",
+    "priority": "high",
+    "dependencies": [],
+    "subtasks": [
+      {
+        "id": "0.1",
+        "title": "Create GitHub Repository for sirius-demo",
+        "description": "Initialize GitHub repository to host demo infrastructure code.",
+        "details": "Create new GitHub repository named 'sirius-demo' under organization account. Configure basic settings: public/private visibility, branch protection for main, initialize with README. Repository will contain: Terraform infrastructure, seeding scripts, demo data fixtures, GitHub Actions workflows, documentation. USER ACTION REQUIRED: You will need to create this repository manually in GitHub and provide the repository URL.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": [],
+        "testStrategy": "Verify repository is accessible, can clone locally, has proper permissions, and appears in organization."
+      },
+      {
+        "id": "0.2",
+        "title": "Initialize Repository Structure",
+        "description": "Create standard directory structure for demo infrastructure project.",
+        "details": "Create directory structure:\n- .github/workflows/ (CI/CD pipelines)\n- infra/demo/ (Terraform files)\n- scripts/ (bootstrap, health check, seeding)\n- fixtures/ (demo data JSON files)\n- docs/ (runbooks, troubleshooting)\n- tasks/ (project management)\nAdd .gitignore for Terraform state, secrets, and temporary files. Create initial README.md with project overview and quickstart guide.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["0.1"],
+        "testStrategy": "Verify all directories exist, .gitignore excludes sensitive files, README renders properly on GitHub."
+      },
+      {
+        "id": "0.3",
+        "title": "Create SiriusScan Demo Branch",
+        "description": "Create and configure demo branch in main SiriusScan repository.",
+        "details": "In the main SiriusScan repository, create 'demo' branch from 'main'. This branch will track main closely but include demo-specific configurations. Initial differences will be minimal - just environment variable configurations for DEMO_MODE. Set up branch protection rules to prevent accidental deletion. Document merge strategy for keeping demo in sync with main (manual merges for MVP, can automate later).",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": [],
+        "testStrategy": "Verify demo branch exists, is based on main, can be checked out locally, and has proper protection rules."
+      },
+      {
+        "id": "0.4",
+        "title": "Document Project Architecture",
+        "description": "Create comprehensive architecture documentation for demo infrastructure.",
+        "details": "Create ARCHITECTURE.md documenting: repository strategy (sirius-demo for infra, SiriusScan/demo for app), infrastructure components (EC2, Security Groups, IAM roles), CI/CD workflow (triggers, steps, timeouts), demo mode implementation (env vars, UI changes), data seeding process, rebuild strategy. Include diagrams showing data flow, deployment pipeline, and component interactions. Document decision rationale for key architectural choices.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["0.2"],
+        "testStrategy": "Review documentation for completeness, clarity, and accuracy. Verify all architectural decisions are documented with rationale."
+      }
+    ]
+  },
+  {
+    "id": "1",
+    "title": "PHASE 1: AWS Infrastructure Setup",
+    "description": "Configure AWS resources, OIDC authentication, and Terraform backend infrastructure.",
+    "details": "Key Outputs: AWS OIDC provider configured, IAM roles created, Terraform backend (S3 + DynamoDB) provisioned, secrets in Parameter Store.",
+    "status": "pending",
+    "priority": "high",
+    "dependencies": ["0"],
+    "subtasks": [
+      {
+        "id": "1.1",
+        "title": "Configure AWS OIDC Provider for GitHub Actions",
+        "description": "Set up OIDC federation to allow GitHub Actions to assume AWS roles without static credentials.",
+        "details": "Create OIDC identity provider in AWS IAM with GitHub as provider. Provider URL: https://token.actions.githubusercontent.com, Audience: sts.amazonaws.com. Create IAM role that GitHub Actions can assume with trust policy limiting to specific repository and branches. Role should have permissions for: EC2 (create/destroy instances, security groups), IAM (attach instance profiles), S3 (Terraform state), DynamoDB (state locking), CloudWatch Logs, SSM Parameter Store. Document the ARN of the role for GitHub secrets. USER ACTION REQUIRED: You'll need AWS console access to create OIDC provider and role, then provide the role ARN.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["0.1"],
+        "testStrategy": "Test OIDC authentication from GitHub Actions workflow, verify role assumption succeeds, confirm permissions are adequate for Terraform operations."
+      },
+      {
+        "id": "1.2",
+        "title": "Create Terraform Backend Infrastructure",
+        "description": "Provision S3 bucket and DynamoDB table for Terraform state management.",
+        "details": "Create S3 bucket for Terraform state with naming convention: sirius-demo-tfstate-{account-id}. Enable versioning, encryption (AES256 or KMS), and block public access. Create DynamoDB table for state locking: sirius-demo-tflock with primary key 'LockID' (String). Enable point-in-time recovery for production safety. Tag resources: Project=SiriusDemo, ManagedBy=Terraform, Environment=demo. Create backend.tf configuration file with backend settings. This can be done manually via AWS Console/CLI or with a separate Terraform bootstrap script.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["1.1"],
+        "testStrategy": "Verify S3 bucket exists with versioning enabled, encryption active, and proper access controls. Confirm DynamoDB table is accessible and configured correctly. Test Terraform init with backend configuration."
+      },
+      {
+        "id": "1.3",
+        "title": "Configure AWS Secrets in Parameter Store",
+        "description": "Store sensitive configuration values in AWS Systems Manager Parameter Store.",
+        "details": "Create SecureString parameters in SSM Parameter Store for demo secrets: /sirius/demo/db-password (PostgreSQL password), /sirius/demo/nextauth-secret (NextAuth secret for UI), /sirius/demo/discord-client-id (OAuth client ID - can be dummy for demo), /sirius/demo/discord-client-secret (OAuth secret - can be dummy for demo). Document parameter paths in Terraform variables. These will be referenced during instance bootstrap to configure environment variables. Use consistent naming convention and encryption.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.1"],
+        "testStrategy": "Verify all parameters exist in SSM, are encrypted, can be retrieved by IAM role, and follow naming convention."
+      },
+      {
+        "id": "1.4",
+        "title": "Identify or Create VPC and Subnet",
+        "description": "Determine VPC and public subnet to use for demo EC2 instance.",
+        "details": "Identify existing VPC and public subnet in target region (us-east-1 recommended), OR create new VPC for demo if needed. Public subnet must have: Internet Gateway attached, route to 0.0.0.0/0 via IGW, auto-assign public IP enabled. Document VPC ID and Subnet ID for Terraform variables. If creating new VPC, use CIDR 10.0.0.0/16, create public subnet 10.0.1.0/24, attach IGW, configure route table. Tag appropriately. For MVP, can use default VPC if available.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.1"],
+        "testStrategy": "Verify subnet has internet connectivity, can launch instances with public IPs, and routes are properly configured. Test with a test EC2 instance if needed."
+      }
+    ]
+  },
+  {
+    "id": "2",
+    "title": "PHASE 2: Terraform Infrastructure as Code",
+    "description": "Develop Terraform configuration to provision and manage demo infrastructure.",
+    "details": "Key Outputs: Terraform modules for EC2, security groups, IAM roles, complete infrastructure definition, validated and tested Terraform code.",
+    "status": "pending",
+    "priority": "high",
+    "dependencies": ["1"],
+    "subtasks": [
+      {
+        "id": "2.1",
+        "title": "Create Terraform Main Configuration",
+        "description": "Develop main.tf with provider configuration and core infrastructure resources.",
+        "details": "Create infra/demo/main.tf with: AWS provider configuration (region, required version), backend configuration (S3 + DynamoDB), EC2 instance resource (t3.medium, Ubuntu 22.04 LTS AMI), security group with rules (ingress: 80, 443, 3000, 9001 from 0.0.0.0/0; egress: all), IAM instance profile with SSM and CloudWatch permissions. Use latest Ubuntu LTS AMI via data source. Configure instance with: appropriate instance type, 30GB root volume (GP3), user data script (bootstrap), tags (Name, Project, Environment, ManagedBy). Ensure consistent resource naming convention.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["1.2", "1.4"],
+        "testStrategy": "Run terraform validate, terraform plan to verify syntax and logic. Review planned resources for correctness and completeness."
+      },
+      {
+        "id": "2.2",
+        "title": "Create Terraform Variables Configuration",
+        "description": "Define all configurable parameters in variables.tf with sensible defaults.",
+        "details": "Create infra/demo/variables.tf defining: aws_region (default: us-east-1), instance_type (default: t3.medium), root_volume_size (default: 30), vpc_id (no default - required), subnet_id (no default - required), allowed_cidrs (default: ['0.0.0.0/0']), demo_branch (default: demo), sirius_repo_url, project_tags (default map), ami_filter (Ubuntu 22.04 LTS pattern). Add descriptions for each variable explaining purpose and constraints. Create terraform.tfvars.example as template for users to copy.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["2.1"],
+        "testStrategy": "Verify all variables have appropriate types, descriptions, and defaults where applicable. Test with terraform plan using various variable combinations."
+      },
+      {
+        "id": "2.3",
+        "title": "Create Terraform Outputs Configuration",
+        "description": "Define outputs to expose critical information for CI/CD pipeline.",
+        "details": "Create infra/demo/outputs.tf with: instance_id (EC2 instance ID), instance_public_ip (public IP address), instance_public_dns (public DNS name), api_url (constructed HTTP URL to API: http://{public_dns}:9001), ui_url (constructed HTTP URL to UI: http://{public_dns}:3000), security_group_id (for reference). Mark sensitive outputs appropriately. These outputs will be consumed by GitHub Actions for health checks and seeding. Use output formatting to make URLs ready to use.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["2.1"],
+        "testStrategy": "Run terraform plan and verify outputs appear correctly. Test output values after apply for validity and accessibility."
+      },
+      {
+        "id": "2.4",
+        "title": "Create IAM Roles and Instance Profile",
+        "description": "Define IAM resources for EC2 instance permissions via Terraform.",
+        "details": "Create IAM role with trust policy allowing EC2 service to assume it. Attach managed policies: AmazonSSMManagedInstanceCore (for SSM Session Manager access), CloudWatchAgentServerPolicy (for CloudWatch Logs). Create inline policy allowing: SSM Parameter Store read access to /sirius/demo/* parameters, CloudWatch Logs write access to /sirius/demo/* log groups. Create instance profile linking to role. Reference instance profile in EC2 instance resource. Document minimum required permissions for security review.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["2.1"],
+        "testStrategy": "Verify IAM role and profile are created correctly. Test SSM Session Manager connectivity to instance. Confirm instance can retrieve SSM parameters and write to CloudWatch Logs."
+      },
+      {
+        "id": "2.5",
+        "title": "Create User Data Bootstrap Script",
+        "description": "Develop comprehensive bootstrap script to configure EC2 instance on first boot.",
+        "details": "Create infra/demo/user_data.sh as Terraform templatefile. Script should: 1) Update system packages (apt-get update/upgrade), 2) Install dependencies (docker.io, docker-compose-plugin, git, jq, curl, awscli), 3) Configure Docker service (enable and start), 4) Add ubuntu user to docker group, 5) Retrieve secrets from SSM Parameter Store and export as environment variables, 6) Clone SiriusScan repository (demo branch) to /opt/sirius, 7) Create .env file with demo configuration (DEMO_MODE=true, DB credentials, etc.), 8) Run docker compose up -d in repo directory, 9) Create log directory /var/log/sirius for seeding logs, 10) Set up CloudWatch Logs agent (optional for MVP). Use set -e for error handling. Log all actions to /var/log/cloud-init-output.log.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["2.1", "1.3"],
+        "testStrategy": "Test bootstrap script on local Ubuntu VM or EC2 test instance. Verify all dependencies install, Docker starts, repository clones, and services launch successfully. Check for errors in cloud-init logs."
+      },
+      {
+        "id": "2.6",
+        "title": "Test Terraform Infrastructure Locally",
+        "description": "Validate complete Terraform configuration with plan and apply in test environment.",
+        "details": "Initialize Terraform backend with terraform init. Run terraform validate to check syntax. Run terraform plan to preview infrastructure changes. Review plan output for correctness: instance size, security rules, IAM permissions, user data script. If test AWS account is available, run terraform apply to create actual resources for testing. Verify: instance launches successfully, can be accessed via SSM Session Manager, Docker is installed and running, repository is cloned, services are starting. Document any issues or required adjustments. Test terraform destroy to ensure clean teardown.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["2.1", "2.2", "2.3", "2.4", "2.5"],
+        "testStrategy": "Complete apply/destroy cycle in test environment. Verify all resources are created and destroyed cleanly. Check for orphaned resources. Validate instance bootstrap completes successfully."
+      }
+    ]
+  },
+  {
+    "id": "3",
+    "title": "PHASE 3: Demo Data & Seeding Scripts",
+    "description": "Create representative demo data for Ellingson Mineral Company and scripts to populate the database.",
+    "details": "Key Outputs: 10-20 realistic host records with vulnerabilities, organized fixture files, idempotent seeding script, health check script.",
+    "status": "pending",
+    "priority": "high",
+    "dependencies": ["0"],
+    "subtasks": [
+      {
+        "id": "3.1",
+        "title": "Design Ellingson Mineral Company Network Topology",
+        "description": "Plan realistic corporate network structure with IT and OT segments.",
+        "details": "Design network topology document including: IT environment (10.0.0.0/16): Domain controllers, file servers, workstations, web servers. OT environment (192.168.50.0/24): SCADA systems, PLCs, HMI stations, industrial endpoints. Mix of Windows (Server 2012/2016/2019, Windows 10) and Linux (Ubuntu, CentOS, RHEL) hosts. Include variety of services: SMB, RDP, HTTP, SSH, databases. Assign hostnames following corporate naming convention (EMC-DC01, EMC-WEB01, EMC-SCADA01, etc.). Document in fixtures/NETWORK_TOPOLOGY.md. Aim for 12-15 hosts total for medium environment.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["0.2"],
+        "testStrategy": "Review topology for realism and coverage. Ensure mix of OSes, network segments, and vulnerability types. Validate IP ranges don't conflict with common internal networks."
+      },
+      {
+        "id": "3.2",
+        "title": "Create IT Environment Host Fixtures",
+        "description": "Generate JSON fixture files for IT segment hosts (8-10 hosts).",
+        "details": "Create fixtures/it-environment/ directory with individual JSON files for each host following host-record.json schema. Include: Windows Domain Controllers (CVE-2020-1472 Zerologon, CVE-2021-42287 AD escalation), Windows File Servers (SMB vulnerabilities, PrintNightmare), Linux Web Servers (Apache/Nginx vulns, outdated packages), Windows Workstations (missing patches, weak configs). Each host should include: accurate OS/version, realistic hostname/IP, 3-5 relevant ports, 2-4 CVEs with proper descriptions and CVSS scores, CPE strings, plausible users, contextual notes. Ensure CVEs are real and historically significant. Use mix of critical (8.5+), high (7.0-8.4), and medium (4.0-6.9) severity scores.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["3.1"],
+        "testStrategy": "Validate JSON syntax for all files. Verify CVE IDs are real and descriptions accurate. Ensure IP/hostname consistency with topology. Test posting one host to local API instance."
+      },
+      {
+        "id": "3.3",
+        "title": "Create OT Environment Host Fixtures",
+        "description": "Generate JSON fixture files for OT/SCADA segment hosts (4-5 hosts).",
+        "details": "Create fixtures/ot-environment/ directory with OT-specific hosts. Include: SCADA Server (Windows Server 2008 R2 - EOL OS, CVE-2017-0144 EternalBlue), HMI Workstations (older Windows versions, VNC vulnerabilities), PLC/RTU devices (embedded Linux, Modbus protocol, vendor-specific CVEs), Industrial Database (SQL Server with CVE-2017-5715 Spectre). OT hosts should reflect: older, unpatched systems, industrial protocols (Modbus, DNP3, OPC), embedded devices with limited patch cycles, vendor-specific software. Use realistic industrial naming and context. Include operational notes about criticality and maintenance windows.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["3.1"],
+        "testStrategy": "Validate JSON syntax. Verify OT-specific CVEs and protocols are realistic. Ensure hosts reflect actual OT security challenges. Test posting to API."
+      },
+      {
+        "id": "3.4",
+        "title": "Create Master Fixtures Index",
+        "description": "Develop index file that lists all fixtures in load order.",
+        "details": "Create fixtures/index.json containing array of all host fixture files in proper loading order. Structure: {\"fixtures\": [{\"file\": \"it-environment/emc-dc01.json\", \"description\": \"Domain Controller 1\", \"priority\": 1}, ...]}.  Order by priority: critical infrastructure first (DCs, databases), then servers, then workstations, finally OT systems. This index will be used by seeding script to load files in sequence. Include metadata: total hosts, environment breakdown, last updated timestamp. Add fixtures/README.md explaining fixture organization and how to add new hosts.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["3.2", "3.3"],
+        "testStrategy": "Verify index references all fixture files correctly. Ensure file paths are accurate. Validate JSON syntax. Test loading sequence with seeding script."
+      },
+      {
+        "id": "3.5",
+        "title": "Create Health Check Wait Script",
+        "description": "Develop script to poll API health endpoint until ready.",
+        "details": "Create scripts/wait_for_api.sh that: accepts API URL as parameter, polls GET /health endpoint every 5 seconds, implements exponential backoff (5s, 10s, 15s, 20s, max 30s), times out after 15 minutes (180 attempts), checks for HTTP 200 and valid JSON response with status='healthy', logs each attempt with timestamp and response status, exits 0 on success or 1 on timeout. Include retry logic for network errors. Use curl with --connect-timeout and --max-time flags. Make script executable (chmod +x). Add detailed logging for debugging failures. Support optional verbose mode via -v flag.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["0.2"],
+        "testStrategy": "Test script against local Sirius API. Verify timeout behavior. Test with unreachable API to confirm timeout. Validate exit codes and logging output."
+      },
+      {
+        "id": "3.6",
+        "title": "Create Demo Data Seeding Script",
+        "description": "Develop idempotent script to POST all fixtures to the API.",
+        "details": "Create scripts/seed_demo.sh that: accepts API URL as parameter, reads fixtures/index.json to get file list, iterates through each fixture file in priority order, POSTs JSON to /host endpoint using curl, validates HTTP response (200/201 OK), implements retry logic (3 attempts) for failed requests, logs successes and failures with detail, maintains running count of seeded hosts, writes detailed log to /var/log/sirius/seed-demo.log, exits 0 if all succeeded, 1 if any failed, generates summary report at end. Should be idempotent - safe to run multiple times (API should handle duplicates). Use jq for JSON processing. Make executable. Add progress indicators for CI output.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["3.4", "3.5"],
+        "testStrategy": "Test with local API instance. Verify all hosts are seeded. Test idempotence by running twice. Validate error handling with malformed JSON. Check log output for completeness."
+      },
+      {
+        "id": "3.7",
+        "title": "Test End-to-End Data Seeding",
+        "description": "Validate complete seeding workflow from health check through data population.",
+        "details": "Perform full integration test: 1) Start local SiriusScan stack with docker compose, 2) Wait for health endpoint using wait_for_api.sh, 3) Run seed_demo.sh to populate all fixtures, 4) Verify hosts appear in UI, 5) Check database directly for correct data, 6) Validate vulnerability associations, 7) Confirm all CPEs, ports, users are correctly stored. Test failure scenarios: API down, malformed fixture, network timeout. Document any issues with fixtures or scripts. Refine retry logic and error messages as needed.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["3.6"],
+        "testStrategy": "Complete seed cycle with fresh database. Verify 100% of fixtures load successfully. Check UI displays all hosts with correct data. Validate no duplicate entries created on re-run."
+      }
+    ]
+  },
+  {
+    "id": "4",
+    "title": "PHASE 4: GitHub Actions CI/CD Pipeline",
+    "description": "Develop automated workflow to rebuild demo infrastructure on schedule and code changes.",
+    "details": "Key Outputs: Working GitHub Actions workflow, OIDC authentication configured, automated destroy/apply/seed cycle, artifact collection.",
+    "status": "pending",
+    "priority": "high",
+    "dependencies": ["2", "3"],
+    "subtasks": [
+      {
+        "id": "4.1",
+        "title": "Create GitHub Actions Workflow Structure",
+        "description": "Set up workflow file with triggers, permissions, and job structure.",
+        "details": "Create .github/workflows/rebuild-demo.yml with: name: 'Rebuild SiriusScan Demo', triggers: push to main (infrastructure changes), schedule: '59 23 * * *' (nightly at 23:59 UTC), workflow_dispatch (manual). Set permissions: id-token: write (OIDC), contents: read. Define job 'rebuild-demo' running on ubuntu-latest with timeout: 45 minutes. Use concurrency group to prevent multiple rebuilds running simultaneously. Add workflow_dispatch inputs for optional parameters (skip_destroy, custom_branch, etc.) for testing.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["0.1"],
+        "testStrategy": "Validate workflow YAML syntax with GitHub Actions linter. Test manual trigger with workflow_dispatch. Verify permissions are minimal and correct."
+      },
+      {
+        "id": "4.2",
+        "title": "Configure OIDC Authentication Step",
+        "description": "Implement AWS credential configuration using OIDC federation.",
+        "details": "Add job step using aws-actions/configure-aws-credentials@v4 action with: role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}, aws-region: us-east-1, role-session-name: GitHubActions-SiriusDemo. Create repository secret AWS_OIDC_ROLE_ARN with IAM role ARN from task 1.1. Add step to verify credentials with aws sts get-caller-identity. Document required secrets in README. Add error handling for authentication failures. USER ACTION REQUIRED: After task 1.1 completes, add AWS_OIDC_ROLE_ARN secret to GitHub repository settings.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["4.1", "1.1"],
+        "testStrategy": "Test credential configuration in workflow run. Verify OIDC authentication succeeds. Confirm assumed role has necessary permissions."
+      },
+      {
+        "id": "4.3",
+        "title": "Add Terraform Initialization and Destroy Steps",
+        "description": "Configure Terraform setup and destroy existing infrastructure.",
+        "details": "Add steps: 1) Checkout repository code (actions/checkout@v4), 2) Setup Terraform (hashicorp/setup-terraform@v3) with version constraint ~> 1.6, 3) Terraform init (with backend config for S3 state), 4) Terraform destroy -auto-approve (with continue-on-error: true to handle no existing resources). Use working-directory: infra/demo for all Terraform commands. Pass variables via -var flags or terraform.tfvars file. Capture destroy output to artifacts for debugging. Add step to list AWS resources before destroy for audit trail.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["4.2"],
+        "testStrategy": "Test destroy step with existing demo infrastructure. Verify all resources are removed cleanly. Check for orphaned resources. Validate state file is updated correctly."
+      },
+      {
+        "id": "4.4",
+        "title": "Add Terraform Apply and Output Capture Steps",
+        "description": "Provision new infrastructure and capture critical outputs for later steps.",
+        "details": "Add steps: 1) Terraform plan -out=tfplan (review planned changes), 2) Terraform apply tfplan -auto-approve, 3) Capture outputs: api_url, ui_url, instance_public_dns, instance_id. Use terraform output -json to get structured output. Store outputs in GitHub Actions environment variables or output variables for use in subsequent steps. Add validation that all expected outputs exist. Include step to test connectivity to instance public IP. Log apply duration for monitoring. Save Terraform plan as artifact for review if apply fails.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["4.3"],
+        "testStrategy": "Test apply creates all resources correctly. Verify outputs are captured and accessible. Validate instance is reachable via public IP. Check Terraform state consistency."
+      },
+      {
+        "id": "4.5",
+        "title": "Add Health Check Wait Step",
+        "description": "Wait for API to become healthy before proceeding to seeding.",
+        "details": "Add step that: 1) Waits for instance to finish user data bootstrap (~5-8 minutes), 2) Calls scripts/wait_for_api.sh with API URL from Terraform output, 3) Times out after 15 minutes with clear failure message, 4) Logs health check attempts to workflow log, 5) Captures final health endpoint response. Use step timeout-minutes: 20 as safety. Add optional step to check Docker container status via SSM if health check fails (for debugging). On success, log message 'API is healthy and ready for seeding'.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["4.4", "3.5"],
+        "testStrategy": "Test health check with fresh instance. Verify wait logic handles slow startup. Test timeout behavior. Validate error messages are helpful for debugging."
+      },
+      {
+        "id": "4.6",
+        "title": "Add Demo Data Seeding Step",
+        "description": "Execute seeding script to populate demo database.",
+        "details": "Add step that: 1) Executes scripts/seed_demo.sh with API URL, 2) Captures seeding output and logs, 3) Validates all fixtures loaded successfully, 4) Uploads seed log to workflow artifacts, 5) Fails workflow if seeding fails. Set step timeout-minutes: 10. Add summary step that queries API for host count and displays in workflow log. Optionally add step to take screenshot of UI showing seeded data (using headless browser) as artifact. Log total hosts seeded and time taken.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["4.5", "3.6"],
+        "testStrategy": "Test seeding step with real API. Verify all fixtures load. Check artifact upload works. Validate failure handling if API rejects data."
+      },
+      {
+        "id": "4.7",
+        "title": "Add Workflow Completion and Artifact Collection",
+        "description": "Collect logs, generate summary, and report workflow status.",
+        "details": "Add final steps: 1) Generate workflow summary with key metrics (total time, hosts seeded, instance details, URLs), 2) Upload artifacts: Terraform plan, apply logs, seed logs, 3) Add job summary using GitHub Actions summary API with: demo URL, API health status, number of hosts, infrastructure details. For failures, capture: Terraform error logs, cloud-init logs from instance (via SSM), Docker logs (via SSM), detailed error context. Add always() condition to artifact upload so logs are collected even on failure. Format summary as Markdown table for readability.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["4.6"],
+        "testStrategy": "Test both success and failure paths. Verify artifacts are uploaded. Check job summary renders correctly. Validate error logs are captured on failures."
+      },
+      {
+        "id": "4.8",
+        "title": "Test Complete CI/CD Pipeline End-to-End",
+        "description": "Execute full workflow and validate all steps function correctly.",
+        "details": "Perform complete test run: 1) Trigger workflow via workflow_dispatch, 2) Monitor each step for success, 3) Verify infrastructure is destroyed and recreated, 4) Confirm API becomes healthy, 5) Validate data seeding completes, 6) Access demo UI and verify hosts are visible, 7) Check all artifacts are uploaded, 8) Review job summary for completeness. Test failure scenarios: Terraform apply failure, health check timeout, seeding error. Verify cleanup happens even on failure. Document total runtime and identify optimization opportunities. Test scheduled run (may need to temporarily adjust schedule for testing).",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["4.7"],
+        "testStrategy": "Complete successful workflow run from trigger to demo accessibility. Verify demo URL works and shows Ellingson data. Test at least one failure scenario. Validate monitoring and logging throughout."
+      }
+    ]
+  },
+  {
+    "id": "5",
+    "title": "PHASE 5: Demo Mode UI Enhancements",
+    "description": "Implement demo-specific UI changes in SiriusScan application.",
+    "details": "Key Outputs: DEMO_MODE environment variable support, hidden scan functionality, login tutorial panel, demo banner with GitHub link.",
+    "status": "pending",
+    "priority": "medium",
+    "dependencies": ["0"],
+    "subtasks": [
+      {
+        "id": "5.1",
+        "title": "Implement DEMO_MODE Environment Variable",
+        "description": "Add demo mode detection throughout SiriusScan UI application.",
+        "details": "In SiriusScan repository (demo branch): 1) Add DEMO_MODE environment variable to .env.example, 2) Create environment config file (e.g., src/config/demo.ts) that exports isDemoMode boolean, 3) Update Next.js configuration to expose NEXT_PUBLIC_DEMO_MODE, 4) Document demo mode in README. Value should be: DEMO_MODE=true for demo, DEMO_MODE=false or unset for production. Ensure this value is accessible throughout the React application. Add TypeScript types for demo configuration. Test that environment variable is properly loaded in both server and client contexts.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["0.3"],
+        "testStrategy": "Set DEMO_MODE=true locally and verify value is accessible in components. Test server-side and client-side rendering. Confirm production builds exclude demo features when DEMO_MODE=false."
+      },
+      {
+        "id": "5.2",
+        "title": "Hide Scan Functionality in Demo Mode",
+        "description": "Conditionally hide or disable scan buttons/features when in demo mode.",
+        "details": "Locate scan-related UI components (scan button, scan configuration modals, scan triggers). Wrap these in conditional rendering based on isDemoMode. For MVP: simple CSS display:none or conditional render (if !isDemoMode). Add data-demo-hidden attribute for potential future enhancements. Document which components are hidden in demo mode. Consider adding tooltip/message explaining 'Scanning disabled in demo mode' if users could discover these features. Test that scan-related routes/pages are still accessible but show appropriate messaging.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["5.1"],
+        "testStrategy": "Enable demo mode and verify scan UI elements are hidden. Test with demo mode disabled to ensure scans work normally. Check for any console errors or broken layouts."
+      },
+      {
+        "id": "5.3",
+        "title": "Create Login Tutorial Panel Component",
+        "description": "Build React component showing demo credentials and helpful links.",
+        "details": "Create new component: LoginTutorialPanel.tsx that displays: 1) Demo credentials (username/password from environment or hardcoded defaults), 2) Link to documentation (GitHub wiki or dedicated docs site), 3) Optional: embed video or link to demo video, 4) Styled as sidebar or modal on login page. Only render when isDemoMode is true. Style consistently with existing UI design system. Use card/panel component from UI library. Include icons for visual appeal. Make dismissible (localStorage to remember dismissal) but default to visible. Add copy-to-clipboard for credentials. Ensure accessibility (ARIA labels, keyboard navigation).",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["5.1"],
+        "testStrategy": "Render component in demo mode on login page. Verify links work. Test copy-to-clipboard. Validate responsive design on mobile. Check accessibility with screen reader."
+      },
+      {
+        "id": "5.4",
+        "title": "Create Demo Banner Component",
+        "description": "Add persistent banner indicating demo mode and linking to GitHub.",
+        "details": "Create DemoBanner.tsx component displaying: 'This is a demo environment. Follow project development on GitHub' with link to SiriusScan repository. Position at top of application (header) or as dismissible notification bar. Style with distinct demo branding (different color scheme, subtle background). Only render when isDemoMode is true. Include: GitHub icon/logo, clear call-to-action text, link to repository releases/stars. Make non-intrusive but visible. Option to dismiss (session storage) but reappears on page reload. Ensure doesn't interfere with app functionality or navigation.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["5.1"],
+        "testStrategy": "Verify banner appears only in demo mode. Test link to GitHub. Check banner doesn't obscure important UI elements. Validate dismiss functionality. Test across different screen sizes."
+      },
+      {
+        "id": "5.5",
+        "title": "Update Docker Compose for Demo Mode",
+        "description": "Configure environment variables for demo mode in compose configuration.",
+        "details": "In SiriusScan repository demo branch: Update docker-compose.yaml sirius-ui service environment section to include DEMO_MODE=true and NEXT_PUBLIC_DEMO_MODE=true. Alternatively, create docker-compose.override.yaml on demo branch with demo-specific environment variables (if we want to avoid changing base file). Document that demo mode is controlled via environment variable in deployment guide. Ensure environment variable is passed through to Next.js application correctly. Test that Docker Compose up with demo configuration shows demo features.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["5.1"],
+        "testStrategy": "Run docker compose up with demo configuration. Verify DEMO_MODE environment variable is set in container. Check that UI shows demo features (banner, tutorial panel, hidden scans)."
+      },
+      {
+        "id": "5.6",
+        "title": "Test Demo UI Features End-to-End",
+        "description": "Validate all demo-specific UI enhancements work correctly together.",
+        "details": "Comprehensive UI testing: 1) Start SiriusScan with DEMO_MODE=true, 2) Verify login page shows tutorial panel with credentials, 3) Test login with demo credentials, 4) Confirm demo banner appears on dashboard, 5) Verify scan functionality is hidden/disabled, 6) Test all links (GitHub, documentation, video), 7) Check responsive design on mobile/tablet, 8) Validate accessibility, 9) Test with DEMO_MODE=false to ensure normal operation. Document any visual issues or UX improvements needed. Take screenshots for documentation. Test browser compatibility (Chrome, Firefox, Safari).",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["5.2", "5.3", "5.4", "5.5"],
+        "testStrategy": "Complete user journey through demo UI. Verify all demo features present and functional. Test production mode to ensure features are disabled. Check for console errors or warnings."
+      }
+    ]
+  },
+  {
+    "id": "6",
+    "title": "PHASE 6: Documentation & Runbooks",
+    "description": "Create comprehensive documentation for demo infrastructure operation and maintenance.",
+    "details": "Key Outputs: README with quickstart, architecture documentation, troubleshooting guide, runbook for common operations.",
+    "status": "pending",
+    "priority": "medium",
+    "dependencies": ["4", "5"],
+    "subtasks": [
+      {
+        "id": "6.1",
+        "title": "Create Comprehensive README",
+        "description": "Write main README.md with project overview and quickstart guide.",
+        "details": "Create README.md in sirius-demo repository root with sections: 1) Project Overview (purpose, architecture at high level), 2) Prerequisites (AWS account, GitHub repository access, Terraform, etc.), 3) Quick Start (how to trigger rebuild, access demo), 4) Repository Structure (explanation of directories), 5) Configuration (environment variables, secrets), 6) Demo Data (Ellingson Mineral Company overview), 7) Monitoring & Logs (where to find logs, CloudWatch), 8) Troubleshooting (link to guide), 9) Contributing (how to add fixtures, modify infra). Include badges (build status, license). Add architecture diagram. Link to detailed docs. Keep concise but complete.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["4.8", "5.6"],
+        "testStrategy": "Review README for clarity and completeness. Test all links. Verify instructions are accurate. Have someone unfamiliar with project follow quickstart."
+      },
+      {
+        "id": "6.2",
+        "title": "Create Infrastructure Runbook",
+        "description": "Document common operational procedures and maintenance tasks.",
+        "details": "Create docs/RUNBOOK.md with procedures for: 1) Manual demo rebuild (workflow_dispatch), 2) Adding new demo hosts/fixtures, 3) Updating Terraform infrastructure, 4) Rotating secrets in Parameter Store, 5) Accessing instance via SSM Session Manager, 6) Viewing Docker logs on instance, 7) Manual database backup/restore, 8) Scaling instance size, 9) Updating demo branch from main, 10) Emergency shutdown. Include exact commands, screenshots where helpful, expected outputs, common errors and solutions. Format as step-by-step procedures. Add table of contents.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["4.8"],
+        "testStrategy": "Test each procedure by following documented steps. Verify commands are correct. Ensure outputs match expectations. Update for any errors found."
+      },
+      {
+        "id": "6.3",
+        "title": "Create Troubleshooting Guide",
+        "description": "Document common issues and resolution steps.",
+        "details": "Create docs/TROUBLESHOOTING.md organized by failure type: 1) OIDC Authentication Failures (permission errors, role assumption issues), 2) Terraform Errors (state lock, resource conflicts, destroy failures), 3) Instance Bootstrap Issues (cloud-init failures, Docker not starting), 4) Health Check Timeouts (API not responding, services not starting), 5) Seeding Failures (malformed JSON, API errors, database issues), 6) Network/Connectivity Problems (security group, routing, DNS), 7) Resource Quotas (EC2 limits, IP exhaustion). For each issue: symptoms, root cause, resolution steps, prevention. Include log locations and interpretation. Add decision trees for diagnosis.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["4.8"],
+        "testStrategy": "Review against actual failures encountered during development. Validate resolution steps work. Test log commands return expected information."
+      },
+      {
+        "id": "6.4",
+        "title": "Create Demo Data Documentation",
+        "description": "Document Ellingson Mineral Company demo environment design and fixture format.",
+        "details": "Create fixtures/README.md explaining: 1) Network topology (IT vs OT, IP ranges, segments), 2) Host naming conventions, 3) Fixture file format and schema, 4) How to add new hosts (file location, required fields, validation), 5) CVE selection criteria, 6) Load order and dependencies, 7) Customization for different demo scenarios. Include example fixture with annotations. Document relationship to real-world enterprise environments. Add visual network diagram. List all current hosts with descriptions. Provide template fixture file for new hosts.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["3.7"],
+        "testStrategy": "Follow documentation to add a new test host. Verify instructions are complete and accurate. Validate example fixture loads successfully."
+      },
+      {
+        "id": "6.5",
+        "title": "Document Monitoring and Observability",
+        "description": "Create guide for monitoring demo health and debugging issues.",
+        "details": "Create docs/MONITORING.md covering: 1) GitHub Actions workflow history (how to interpret runs), 2) CloudWatch Logs access and searching, 3) SSM Session Manager for instance access, 4) Docker container logs (docker logs commands), 5) Terraform state inspection, 6) API health endpoint monitoring, 7) Resource utilization (CPU, memory, disk on EC2), 8) Cost tracking (AWS cost explorer, tags). Include log retention policies. Document where each type of log is stored. Add examples of log queries for common scenarios. Link to AWS console URLs with proper filters.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["4.8"],
+        "testStrategy": "Access each monitoring resource documented. Verify instructions for log access work. Test example queries return useful information."
+      },
+      {
+        "id": "6.6",
+        "title": "Create Cost and Resource Management Guide",
+        "description": "Document cost optimization and resource cleanup procedures.",
+        "details": "Create docs/COST_MANAGEMENT.md with: 1) Expected monthly costs breakdown (EC2, data transfer, S3, etc.), 2) Resource tagging strategy for cost allocation, 3) Cleanup procedures for orphaned resources, 4) Cost optimization tips (instance sizing, scheduling), 5) Budget alerts setup, 6) Resource lifecycle policies, 7) How to temporarily pause demo (stop instance vs destroy). Include AWS Cost Explorer queries. Document Terraform tag conventions. Add script for finding untagged resources. Provide cost comparison for different instance types.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["2.6"],
+        "testStrategy": "Review cost estimates against actual AWS billing. Verify cleanup procedures work. Test resource tagging is applied correctly."
+      }
+    ]
+  },
+  {
+    "id": "7",
+    "title": "PHASE 7: Testing, Validation & Go-Live",
+    "description": "Final end-to-end testing, validation of all requirements, and production deployment.",
+    "details": "Key Outputs: All acceptance criteria met, demo publicly accessible, nightly rebuilds functioning, documentation complete.",
+    "status": "pending",
+    "priority": "high",
+    "dependencies": ["1", "2", "3", "4", "5", "6"],
+    "subtasks": [
+      {
+        "id": "7.1",
+        "title": "Validate All PRD Acceptance Criteria",
+        "description": "Systematically verify each acceptance criterion from PRD is met.",
+        "details": "Test against PRD section 12 acceptance criteria: A1 - Push to demo branch triggers rebuild completing in ≤15 min (p95). Measure timing over multiple runs. A2 - Nightly job at 23:59 UTC rebuilds environment. Wait for scheduled run. A3 - API health confirmed before seeding, demo data visible. Check health check logs and UI. A4 - Artifacts include seed logs with actionable errors. Review workflow artifacts. A5 - No static AWS keys committed, OIDC verified. Scan repository and test OIDC. A6 - Resources tagged, no orphans after destroy. Check AWS console after destroy. Document results for each criterion. Address any failures before go-live.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["4.8", "5.6"],
+        "testStrategy": "Create checklist of all acceptance criteria. Test each systematically. Document evidence (screenshots, logs, metrics). Fix any failures and retest."
+      },
+      {
+        "id": "7.2",
+        "title": "Perform Load and Performance Testing",
+        "description": "Validate demo performs adequately under expected usage.",
+        "details": "Test demo performance: 1) Load time for UI initial page load (target <3s), 2) API response times for host list, details (target <500ms), 3) Concurrent user simulation (5-10 simultaneous users), 4) Database query performance with full dataset, 5) Docker container resource usage, 6) Instance CPU/memory under load. Use tools like Apache Bench, Lighthouse for UI. Monitor CloudWatch metrics during tests. Document performance baselines. Identify any bottlenecks (increase instance size if needed). Test after fresh rebuild and after running 24+ hours. Validate performance is acceptable for demo purposes (not production grade).",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["7.1"],
+        "testStrategy": "Run performance tests from external network. Measure and document key metrics. Verify meets acceptable thresholds for demo use. Test UI responsiveness during load."
+      },
+      {
+        "id": "7.3",
+        "title": "Security Review and Hardening",
+        "description": "Review security posture and implement any critical hardening measures.",
+        "details": "Security checklist: 1) No secrets in Git history (scan with git-secrets or trufflehog), 2) Security group rules follow least privilege (only required ports), 3) IAM roles have minimum permissions needed, 4) Secrets encrypted in Parameter Store, 5) OIDC configuration restricts to specific repo/branch, 6) No SSH keys configured, 7) Demo credentials are publicly known (acceptable for demo), 8) Instance has latest security patches, 9) Docker containers from trusted sources, 10) API doesn't expose sensitive data in demo mode. Document security decisions and accepted risks. For MVP, focus on preventing credential leaks and ensuring OIDC security. Add security.md with responsible disclosure policy.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["7.1"],
+        "testStrategy": "Run security scanning tools on repository. Review IAM policies for over-permissions. Penetration test demo environment. Verify no secrets are committed."
+      },
+      {
+        "id": "7.4",
+        "title": "User Acceptance Testing with Stakeholders",
+        "description": "Have stakeholders test demo and provide feedback.",
+        "details": "Coordinate with stakeholders (Matt/OpenSecurity team) for UAT: 1) Provide demo URL and credentials, 2) Walk through demo features and Ellingson data, 3) Demonstrate rebuild process, 4) Review documentation for clarity, 5) Collect feedback on UI/UX, demo data realism, performance, 6) Identify any missing features or improvements, 7) Validate meets business objectives (sales demo, community showcase). Document all feedback. Prioritize critical issues for immediate fix, nice-to-haves for future. Get stakeholder sign-off before production go-live. Create video demo walkthrough for future reference.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["7.2"],
+        "testStrategy": "Schedule UAT session with stakeholders. Prepare demo script. Collect structured feedback. Address critical issues. Obtain formal approval to proceed."
+      },
+      {
+        "id": "7.5",
+        "title": "Production Environment Go-Live",
+        "description": "Deploy demo to production configuration and make publicly accessible.",
+        "details": "Production deployment checklist: 1) Ensure all AWS resources use production tags, 2) Configure production GitHub secrets (AWS_OIDC_ROLE_ARN, etc.), 3) Merge demo infrastructure code to main branch, 4) Update demo branch in SiriusScan with final UI changes, 5) Trigger production rebuild via workflow, 6) Monitor first production deployment closely, 7) Verify demo is publicly accessible at production URL, 8) Test nightly schedule in production, 9) Configure any DNS if needed (or document IP/DNS for stakeholders), 10) Announce demo availability (internal/external). Keep team available for first 24-48 hours to monitor. Document production URLs and access information.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["7.4"],
+        "testStrategy": "Execute production deployment during business hours with team available. Monitor all logs and metrics. Verify public accessibility. Test complete rebuild cycle in production. Confirm nightly schedule is active."
+      },
+      {
+        "id": "7.6",
+        "title": "Create Handoff Documentation and Training",
+        "description": "Prepare materials for ongoing maintenance and operation.",
+        "details": "Create handoff package: 1) Executive summary of demo architecture, 2) Quick reference card for common operations, 3) Escalation procedures for issues, 4) Access control documentation (who has AWS/GitHub access), 5) Maintenance schedule (when to review costs, update fixtures, patch instances), 6) Training materials for new team members, 7) Demo presentation deck showing infrastructure, 8) FAQ document for common questions. Conduct knowledge transfer session with operations team if applicable. Record demo walkthrough video. Create Confluence/Wiki page with all documentation links. Ensure at least 2 people understand the full system.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["7.5"],
+        "testStrategy": "Review handoff package with stakeholder. Ensure documentation is complete and understandable. Verify someone other than original developer can operate the system."
+      },
+      {
+        "id": "7.7",
+        "title": "Establish Monitoring and Success Metrics",
+        "description": "Set up tracking for demo health and usage metrics.",
+        "details": "Implement basic monitoring: 1) GitHub Action workflow success rate tracking, 2) Demo uptime monitoring (simple external ping service), 3) Rebuild duration tracking over time, 4) Cost tracking per month, 5) (Optional) Basic analytics on demo usage if needed later. Create simple dashboard or spreadsheet tracking: daily rebuild status, monthly costs, infrastructure changes, incidents/issues. Set up weekly review of demo health. Document baseline metrics for comparison. Plan for future enhancement: CloudWatch dashboards, alerts, usage analytics. For MVP, keep monitoring lightweight and manual.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["7.5"],
+        "testStrategy": "Track metrics for 2 weeks post-launch. Verify data collection works. Review metrics in team meeting. Adjust tracking as needed."
+      }
+    ]
+  },
+  {
+    "id": "8",
+    "title": "PHASE 8: Future Enhancements (Post-MVP)",
+    "description": "Planned improvements and features beyond MVP scope.",
+    "details": "Key Outputs: Roadmap for demo infrastructure evolution, feature backlog, scalability planning.",
+    "status": "deferred",
+    "priority": "low",
+    "dependencies": ["7"],
+    "subtasks": [
+      {
+        "id": "8.1",
+        "title": "Implement Automated Notifications",
+        "description": "Add Slack/email notifications for rebuild failures and successes.",
+        "details": "Integrate notifications: 1) Slack webhook for workflow failures with error details and logs, 2) Optional: success notifications with demo URL and metrics, 3) Email notifications for persistent failures (3+ consecutive), 4) GitHub Issues auto-creation for repeated failures. Configure notification thresholds and quiet hours. Add notification preferences to documentation. Keep notifications actionable and not noisy. Consider digest format for daily summary.",
+        "status": "deferred",
+        "priority": "medium",
+        "dependencies": [],
+        "testStrategy": "Test notification delivery for success and failure scenarios. Verify message formatting and links. Validate notification preferences work."
+      },
+      {
+        "id": "8.2",
+        "title": "Implement Blue/Green Deployment Strategy",
+        "description": "Add zero-downtime deployments with blue/green infrastructure switching.",
+        "details": "Enhance deployment: 1) Terraform creates new 'green' instance while 'blue' is running, 2) Seed and validate green instance, 3) Update DNS or load balancer to point to green, 4) Destroy blue instance after validation period, 5) Rollback capability if green fails validation. Requires: Application Load Balancer, Route53 or DNS management, health check automation, automated validation tests. Significantly reduces downtime but increases complexity and cost. Consider for production-critical demo scenarios.",
+        "status": "deferred",
+        "priority": "low",
+        "dependencies": [],
+        "testStrategy": "Test blue/green deployment with simulated failure. Verify zero-downtime transition. Validate rollback procedure works correctly."
+      },
+      {
+        "id": "8.3",
+        "title": "Add TLS/HTTPS with Certificate Management",
+        "description": "Implement HTTPS for demo with proper TLS certificates.",
+        "details": "Add TLS support: 1) Register domain name for demo (demo.siriusscan.io or similar), 2) Create Application Load Balancer with HTTPS listener, 3) Use AWS Certificate Manager for TLS certificates, 4) Configure Route53 for DNS management, 5) Update security groups and Terraform, 6) Redirect HTTP to HTTPS, 7) Update all URLs in documentation and workflows. Requires domain ownership and ACM certificate validation. Improves professionalism and security. Consider for customer-facing production demo.",
+        "status": "deferred",
+        "priority": "medium",
+        "dependencies": [],
+        "testStrategy": "Verify HTTPS access works. Test certificate auto-renewal. Validate redirect from HTTP. Check for mixed content warnings."
+      },
+      {
+        "id": "8.4",
+        "title": "Implement Ephemeral PR Preview Environments",
+        "description": "Create temporary demo environments for pull request reviews.",
+        "details": "Add PR preview capability: 1) GitHub Actions workflow triggered on PR creation, 2) Creates isolated environment with unique URL, 3) Deploys PR branch for testing, 4) Comments PR with preview URL, 5) Automatically destroys environment when PR closes, 6) Implements resource limits to prevent cost explosion. Useful for: testing infrastructure changes before merge, demo features to stakeholders, isolated testing environments. Requires sophisticated Terraform workspace management and cost controls.",
+        "status": "deferred",
+        "priority": "low",
+        "dependencies": [],
+        "testStrategy": "Create test PR and verify preview environment is created. Test resource cleanup on PR close. Validate cost limits are enforced."
+      },
+      {
+        "id": "8.5",
+        "title": "Add Demo Analytics and Usage Tracking",
+        "description": "Implement analytics to understand demo usage patterns.",
+        "details": "Add analytics: 1) Simple page view tracking (Google Analytics or privacy-focused alternative), 2) Track common user paths through demo, 3) Monitor which hosts/vulnerabilities are viewed most, 4) Capture demo session duration, 5) Geographic distribution of demo users, 6) Conversion tracking (demo to trial signup if applicable). Privacy considerations: anonymize data, clear privacy policy, respect GDPR/CCPA. Use insights to improve demo data and user experience. Optional: heatmaps, session recordings (with user consent).",
+        "status": "deferred",
+        "priority": "low",
+        "dependencies": [],
+        "testStrategy": "Verify analytics data collection works. Test privacy controls. Review sample reports for usefulness. Validate compliance with privacy regulations."
+      },
+      {
+        "id": "8.6",
+        "title": "Implement Rate Limiting and Security Hardening",
+        "description": "Add protection against abuse and security enhancements.",
+        "details": "Security enhancements: 1) API rate limiting (requests per IP per hour), 2) WAF rules for common attack patterns, 3) Bot detection and blocking, 4) Database query limits to prevent resource exhaustion, 5) Implement CAPTCHA on login if abuse detected, 6) Geographic restrictions if needed, 7) DDoS protection (AWS Shield), 8) Automated security scanning of demo environment. Monitor for abuse patterns. Add IP blacklist/whitelist capability. Document security incident response procedures.",
+        "status": "deferred",
+        "priority": "medium",
+        "dependencies": [],
+        "testStrategy": "Test rate limiting with high request volume. Verify WAF rules don't block legitimate traffic. Simulate attack patterns and verify blocking."
+      },
+      {
+        "id": "8.7",
+        "title": "Create Multi-Region Demo Deployments",
+        "description": "Deploy demo in multiple AWS regions for global availability.",
+        "details": "Multi-region architecture: 1) Extend Terraform for multi-region deployment, 2) Deploy in us-east-1, eu-west-1, ap-southeast-1, 3) Geographic routing via Route53, 4) Separate fixtures per region or shared S3 bucket, 5) Regional CloudWatch Logs, 6) Cost optimization with region-specific instance types, 7) Coordinated rebuild schedules. Benefits: reduced latency for global users, regional compliance, high availability. Complexity: state management per region, cost multiply by regions, maintenance overhead.",
+        "status": "deferred",
+        "priority": "low",
+        "dependencies": [],
+        "testStrategy": "Deploy to test region. Verify geographic routing works. Test failover between regions. Monitor costs per region."
+      },
+      {
+        "id": "8.8",
+        "title": "Implement Automated Demo Data Updates",
+        "description": "Keep demo data current with latest CVEs and security trends.",
+        "details": "Automated data updates: 1) Script to fetch latest critical CVEs from NVD, 2) Update fixture files with recent vulnerabilities, 3) Rotate older CVEs out to keep data fresh, 4) Automated PR creation with updated fixtures, 5) Review and merge process for data updates, 6) Validation that new CVEs match existing hosts. Run monthly or quarterly. Benefits: demo stays relevant, showcases current threats, demonstrates product value. Requires: NVD API integration, validation logic, review workflow.",
+        "status": "deferred",
+        "priority": "low",
+        "dependencies": [],
+        "testStrategy": "Test CVE fetching and fixture generation. Validate generated fixtures load correctly. Review PR creation automation. Test merge workflow."
+      }
+    ]
+  }
+]

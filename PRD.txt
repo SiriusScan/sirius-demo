@@ -1,0 +1,374 @@
+SiriusScan Demo — Continuous Rebuild PRD (v1.0)
+======================================================================
+Document type: Product Requirements Document (PRD)
+Owner: Matt (Open Security Inc.)
+Author: ChatGPT (assistant to Matt)
+Date: 2025-10-01
+Status: Draft for developer implementation
+
+----------------------------------------------------------------------
+1) PURPOSE NARRATIVE
+----------------------------------------------------------------------
+We will stand up a public (or semi-public) demo of SiriusScan that is
+ALWAYS FRESH. The demo must reset automatically on a daily cadence and
+on any update to the `demo` branch. "Reset" means the entire demo
+environment is provisioned as brand-new infrastructure, the stack is
+bootstrapped with Docker, and representative demo data is seeded as soon
+as the API is healthy.
+
+The goal is to (1) demonstrate the product reliably, (2) continuously
+verify that the demo build remains deployable, and (3) create the
+foundation for a scale-out, multi-tenant demo platform that can be used
+for user trials, sales, and community events.
+
+This is not a full production deployment: it is a *disposable, repeatable,
+observed* environment designed to validate build correctness and provide
+a hands-on demo.
+
+----------------------------------------------------------------------
+2) OBJECTIVES & OUTCOMES
+----------------------------------------------------------------------
+Primary objectives (MVP):
+- O1 — Rebuild demo nightly at 23:59 UTC *and* on push to `demo` branch.
+- O2 — Use Infrastructure as Code (Terraform) to destroy and recreate
+      the environment each run (fresh infra, no drift).
+- O3 — Automate host bootstrap: install dependencies, clone repo on the
+      `demo` branch, launch stack with Docker Compose.
+- O4 — Gate data seeding on API health; seed representative demo data
+      via authenticated curl POSTs.
+- O5 — CI job outputs clear pass/fail, artifacts (logs), and runtime
+      metrics; failure notifies the team.
+
+Secondary objectives:
+- S1 — Zero long-lived AWS keys: use GitHub Actions OIDC to assume role.
+- S2 — No SSH keys on the instance; manage via SSM Session Manager.
+- S3 — Centralize secrets in AWS SSM Parameter Store.
+- S4 — Basic observability: container logs in CloudWatch Logs; health
+       verification in CI.
+- S5 — Cost controls: tag resources; one EC2 instance; destroy on
+       failures; alarms for drifted resources (optional).
+
+Measurable outcomes (KPIs):
+- K1 — Provision + bootstrap + seed completes ≤ 15 minutes (p95).
+- K2 — Nightly job success rate ≥ 95% (rolling 30 days).
+- K3 — Mean time to detect failed rebuild < 5 minutes (CI fail + notify).
+- K4 — Demo shows seeded data within 2 minutes of API health.
+- K5 — Zero leaked long-lived AWS credentials in repo or logs.
+
+Non-goals (MVP):
+- Multi-node scaling (ECS/EKS), HA, auto TLS/WAF, SSO, multi-tenant org
+  separation, persistent demo data across rebuilds.
+
+----------------------------------------------------------------------
+3) USER STORIES
+----------------------------------------------------------------------
+- As a sales engineer, I want a URL that always renders a working demo,
+  reset daily and after relevant commits, so I can confidently demo the
+  latest features.
+- As a developer, I want CI to fail loudly if the demo cannot be rebuilt,
+  so I can investigate quickly using attached logs.
+- As a maintainer, I want the environment to be entirely reproducible
+  from code so we can scale to more demos later (previews, regions).
+- As security, I want short-lived credentials and no inbound SSH to
+  minimize attack surface.
+
+----------------------------------------------------------------------
+4) SCOPE
+----------------------------------------------------------------------
+In-scope (MVP):
+- Single AWS account/region demo on one EC2 instance.
+- Terraform-managed lifecycle (remote S3 state with DynamoDB locking).
+- GitHub Actions workflow that triggers on schedule + push to `demo`.
+- EC2 bootstrap (cloud-init or user-data script) that:
+  * Installs Docker, git, jq, curl.
+  * Clones SiriusScan repo on the `demo` branch.
+  * Launches services via Docker Compose.
+- Health wait loop that polls the API health endpoint until ready
+  (with backoff and timeout).
+- Demo data seeding via curl requests (JSON fixtures in repo).
+- Logging to CloudWatch Logs; job artifacts (seed logs) uploaded.
+- Slack/webhook notification on failures (optional but recommended).
+
+Out-of-scope (MVP):
+- Load balancer, TLS certificates, DNS, CDN, WAF, multi-AZ HA.
+- Externalized data plane (RDS, AmazonMQ, ElastiCache).
+- Deep role-based SSO integration.
+
+Assumptions:
+- SiriusScan repository has a docker-compose path to run UI/API/engine
+  + backing services.
+- There is a health endpoint (e.g., /health) that returns 200 OK when
+  the API is ready. If different, update the scripts accordingly.
+- The API provides routes for creating demo entities (hosts, vulns, etc.).
+  If not, provide a seed endpoint or import mechanism.
+
+----------------------------------------------------------------------
+5) ARCHITECTURE OVERVIEW
+----------------------------------------------------------------------
+High-level flow:
+1) Trigger: (a) push to `demo` branch; (b) daily cron at 23:59 UTC.
+2) GitHub Actions job authenticates to AWS via OIDC → assumes role.
+3) Terraform initializes (remote S3 backend), destroys any existing demo
+   resources (best-effort), then applies a fresh stack.
+4) EC2 instance boots with user-data:
+   - Install Docker + dependencies, enable service.
+   - Clone repo (demo branch).
+   - `docker compose up -d` for all SiriusScan services.
+5) A wait script polls API /health until healthy (timeout N minutes).
+6) Seed script posts JSON fixtures to API to create demo hosts, vulns,
+   etc. Seed results are stored in job artifacts.
+7) Job reports PASS/FAIL and (optionally) sends Slack/webhook message.
+
+Key components (MVP):
+- GitHub Actions workflow: rebuild-demo.yml
+- Terraform: infra/demo (EC2, SG, IAM, SSM, CloudWatch Logs, state)
+- Bootstrap scripts: cloud-init template, wait_for_api.sh, seed_demo.sh
+- Fixtures: demo/fixtures/*.json
+
+----------------------------------------------------------------------
+6) AWS DESIGN (MVP)
+----------------------------------------------------------------------
+Region: us-east-1 (configurable)
+
+Networking:
+- Use existing VPC + public subnet (variables).
+- Security Group allows inbound 80/443 (or restricted CIDRs for private
+  demos). All egress allowed.
+- Optional: map 3000/9001 if exposing raw ports in private testing.
+
+Compute:
+- 1 × EC2 Ubuntu LTS (t3.large default; configurable).
+- Instance Profile with:
+  * AmazonSSMManagedInstanceCore (Session Manager).
+  * CloudWatchLogsFullAccess (or scoped) to ship logs.
+- No SSH key pair; access via SSM only.
+
+State & IAM:
+- Terraform backend: S3 bucket (encryption enabled) + DynamoDB lock table.
+- OIDC role assumed by GitHub Actions with least-privilege policy for
+  EC2, IAM attachments, logs, and state bucket access.
+- Parameter Store for secrets (e.g., admin token) if needed on host.
+
+Observability:
+- CloudWatch Log Groups per service (docker logs via journald or CW agent).
+- Basic metric alarms (optional): instance status check failed; CPU >90%
+  for >10m (tuned to avoid noise).
+
+Cost controls:
+- All resources tagged: Project=SiriusDemo, Owner=OpenSecurity, TTL=Demo.
+- (Optional) Budget alert for monthly demo spend.
+
+----------------------------------------------------------------------
+7) CI/CD DESIGN (GITHUB ACTIONS)
+----------------------------------------------------------------------
+Triggers:
+- push: branches: [ demo ]
+- schedule: cron: '59 23 * * *'
+- manual: workflow_dispatch
+
+Permissions:
+- id-token: write (for OIDC), contents: read.
+
+Job steps (canonical):
+- Checkout
+- Configure AWS creds via OIDC (role arn in secret)
+- Setup Terraform
+- terraform init (remote state)
+- terraform destroy -auto-approve (continue-on-error true)
+- terraform apply -auto-approve
+- Capture Terraform outputs (api_url, public_dns)
+- Wait for API health (scripts/wait_for_api.sh)
+- Seed demo data (scripts/seed_demo.sh)
+- Upload seed logs as artifact
+- (Optional) Notify Slack/webhook on failure
+
+Timeouts:
+- Overall job timeout: 45 minutes.
+- Health wait: 15 minutes total (e.g., 180 × 5s; exponential backoff ok).
+- Seed step: 5 minutes.
+
+Secrets:
+- AWS_OIDC_ROLE_ARN (required)
+- SIRIUS_ADMIN_TOKEN or initial credentials (optional)
+- SLACK_WEBHOOK_URL (optional)
+
+----------------------------------------------------------------------
+8) TERRAFORM STRUCTURE
+----------------------------------------------------------------------
+Proposed path: repo/infra/demo/
+- main.tf — providers, backend, EC2, SG, IAM, outputs
+- variables.tf — VPC/Subnet IDs, instance type, repo URL, demo branch,
+  state bucket, lock table, tags
+- user_data.sh — cloud-init template with bootstrap script
+
+Module contents (MVP resources):
+- aws_instance.demo
+- aws_security_group.demo
+- aws_iam_role/instance_profile/policy attachments for SSM
+- (Optional) cw agent setup for docker logs (can be done in user-data)
+
+Outputs:
+- api_url (e.g., http://PUBLIC_DNS:9001) — used by CI steps
+- public_dns — for troubleshooting
+
+----------------------------------------------------------------------
+9) BOOTSTRAP & SEEDING
+----------------------------------------------------------------------
+User-data / cloud-init:
+- Install: docker.io, docker-compose-plugin, git, jq, curl
+- Clone: repo@demo into /opt/sirius/repo
+- Bring up stack: `docker compose up -d`
+- Waiter: `/usr/local/bin/wait_for_api.sh http://localhost:<api_port>`
+- Seed:
+  * `scripts/seed_demo.sh <api_url> <token>`
+  * Must be idempotent (safe to re-run).
+  * Must write logs to /opt/sirius/seed-logs and stdout.
+
+Health gate:
+- Endpoint: /health returns 200 OK when ready. If different, update.
+- Retry with backoff; bail with non-zero exit if timeout.
+
+Seeding contract:
+- Provide JSON fixtures under repo/demo/fixtures/:
+  * hosts.json, services.json, vulnerabilities.json, relationships.json
+- Seed script posts fixtures in order with robust error output.
+- Final verification step queries API (e.g., count of hosts/vulns) and
+  prints summary.
+
+----------------------------------------------------------------------
+10) SECURITY
+----------------------------------------------------------------------
+- OIDC federation for CI: no static AWS keys in GitHub.
+- IAM least privilege scoped to Terraform-managed resources.
+- No inbound SSH; SSM Session Manager enabled.
+- Secrets pulled at runtime from SSM (or injected as Actions env).
+- Default admin credentials rotated or randomized per run if applicable.
+- Compose services not exposed publicly unless required; if public,
+  use SG restriction or ALB/TLS in a future iteration.
+
+----------------------------------------------------------------------
+11) REPOSITORY STRATEGY
+----------------------------------------------------------------------
+MVP recommendation: keep Terraform + scripts in the same repo that
+contains the `demo` branch to simplify triggers and reduce cross-repo
+plumbing.
+
+Alternative: split into infra repo and app repo with repository_dispatch.
+Adopt this when multiple environments and stricter RBAC are introduced.
+
+Proposed structure (single repo):
+- .github/workflows/rebuild-demo.yml
+- infra/demo/*
+- scripts/wait_for_api.sh
+- scripts/seed_demo.sh
+- demo/fixtures/*.json
+
+----------------------------------------------------------------------
+12) ACCEPTANCE CRITERIA
+----------------------------------------------------------------------
+A1 — When a commit lands on `demo`, CI tears down and rebuilds infra and
+      finishes with a green check in ≤ 15 minutes (p95).
+A2 — Nightly job runs at 23:59 UTC and results in a fresh environment.
+A3 — API is confirmed healthy prior to seeding; seeding completes and
+      demo data is visible via API.
+A4 — CI artifacts include seed logs; on failure, logs show actionable
+      error messages.
+A5 — No static AWS keys are committed; OIDC assumption verified.
+A6 — All resources are tagged; no orphaned resources after destroy.
+
+----------------------------------------------------------------------
+13) RISKS & MITIGATIONS
+----------------------------------------------------------------------
+- R1: Destroy may fail leaving orphans.
+  M: Use consistent naming + tags; run targeted destroys on retry; add
+     finalizer to clean by tags.
+- R2: Boot timeouts due to slow image pulls.
+  M: Optionally move images to ECR cache; pre-bake AMI in future.
+- R3: Health endpoint changes.
+  M: Externalize path in repo env; add "smoke call" retries.
+- R4: Secrets mismanagement.
+  M: Use SSM; restrict echoing secrets to logs; secret scanning in CI.
+- R5: Cost creep if demo proliferates.
+  M: Budget alarms; TTL tags; scheduled destroy.
+
+----------------------------------------------------------------------
+14) ROADMAP (POST-MVP)
+----------------------------------------------------------------------
+Near-term:
+- Post-seed assertions (sanity API queries).
+- Slack notifications on fail with deep links to artifacts.
+- Status badge and mini status page.
+- Add ALB + ACM for TLS, and DNS record (demo.sirius.example).
+
+Mid-term:
+- Externalize data plane to managed services (RDS, Amazon MQ, ElastiCache).
+- ECS/Fargate or EKS for horizontal scaling.
+- Ephemeral preview environments per PR (time-boxed).
+- Synthetic monitoring (CW Synthetics or GitHub scheduled checks).
+- Basic auth or OIDC login for demo UI.
+
+Long-term:
+- Multi-tenant org isolation, rate limiting, per-tenant quotas.
+- Audit logs, SIEM export.
+- Global regional demos; CDNs; WAF and DDoS protections.
+- Automated cleanup bots and cost governance.
+
+----------------------------------------------------------------------
+15) OPEN QUESTIONS
+----------------------------------------------------------------------
+- Confirm the canonical API health endpoint path and expected payload.
+- Confirm seedable API routes and schemas; identify needed serializers.
+- Decide public vs. restricted exposure (IP allow-list?).
+- Determine minimal viable dataset for an engaging demo (entity counts).
+- Choose Slack/Webhook target for failure notification.
+
+----------------------------------------------------------------------
+16) WORK BREAKDOWN & ESTIMATE (ENGINEERING)
+----------------------------------------------------------------------
+W1  (0.5d)  Create AWS OIDC role + repo secrets.
+W2  (1.0d)  Terraform module for EC2, SG, IAM, state backend + outputs.
+W3  (0.5d)  Cloud-init/user-data bootstrap script.
+W4  (0.5d)  GitHub Actions workflow (init/destroy/apply/health/seed).
+W5  (1.0d)  Seed fixtures and seed script (idempotent + verification).
+W6  (0.5d)  CloudWatch log wiring; artifacts upload; failure surfaces.
+W7  (0.5d)  Hardening (SSM only, least privilege, tags).
+W8  (0.5d)  Docs: runbook, variables, troubleshooting.
+
+Total MVP: ~5.0 engineering days (~1 calendar week with buffer).
+
+----------------------------------------------------------------------
+17) DELIVERABLES
+----------------------------------------------------------------------
+- PR adding: infra/demo/*, scripts/*, demo/fixtures/*, workflow YAML.
+- README with runbook and variables.
+- Successful nightly and push-triggered runs visible in Actions.
+- Seed logs as artifacts and visible demo data via API/UI.
+
+----------------------------------------------------------------------
+18) APPENDIX — PARAMETERS & DEFAULTS
+----------------------------------------------------------------------
+Variables (Terraform):
+- region = "us-east-1"
+- instance_type = "t3.large"
+- vpc_id, subnet_id = (provided)
+- tf_state_bucket, tf_lock_table = (provided)
+- repo_url = "https://github.com/<org>/SiriusScan.git"
+- demo_branch = "demo"
+- allowed_cidrs = ["0.0.0.0/0"] (replace in private demos)
+- tags = { Project="SiriusDemo", Owner="OpenSecurity", TTL="Demo" }
+
+Environment/Ports (adjust to repo reality):
+- UI: 3000 (HTTP)
+- API: 9001 (HTTP)
+- Health: /health
+
+Timeouts:
+- Health wait: 15m maximum
+- Seed: 5m maximum
+
+Logging:
+- CloudWatch Log Group: /sirius/demo/*
+- Artifacts: seed-logs/* uploaded on each run
+
+----------------------------------------------------------------------
+END OF DOCUMENT

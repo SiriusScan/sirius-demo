@@ -1,0 +1,40 @@
+{
+    "hid": "a1b2c3d4e5f6",
+    "os": "Windows",
+    "osversion": "Server 2003",
+    "ip": "192.168.50.13",
+    "hostname": "lab-server",
+    "ports": [
+        {
+            "id": 445,
+            "protocol": "tcp",
+            "state": "closed"
+        }
+    ],
+    "vulnerabilities": [
+        {
+            "vid": "CVE-2021-34527",
+            "description": "Mock Data",
+            "title": ""
+        },
+        {
+            "vid": "CVE-2017-0143",
+            "description": "A remote code execution vulnerability exists when the Windows Print Spooler service improperly performs privileged file operations. An attacker who successfully exploited this vulnerability could run arbitrary code with SYSTEM privileges. An attacker could then install programs; view, change, or delete data; or create new accounts with full user rights.",
+            "title": "CVE-2017-0145 - WannaCry, ETERNALBLUE",
+            "riskscore": 8.8
+        }
+    ],
+    "cpe": [
+        "cpe:2.3:o:canonical:ubuntu:22.04",
+        "cpe:2.3:a:apache:http_server:2.4.52"
+    ],
+    "users": [
+        "alice",
+        "bob"
+    ],
+    "notes": [
+        "Initial setup completed",
+        "Apache installed and configured",
+        "Server in development environment"
+    ]
+}
