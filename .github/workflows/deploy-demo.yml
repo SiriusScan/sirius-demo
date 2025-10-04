@@ -74,21 +74,21 @@ jobs:
 
       - name: Terraform Format Check
         id: fmt
-        run: terraform fmt -check -recursive ${{ env.TERRAFORM_DIR }}
+        run: terraform -chdir=${{ env.TERRAFORM_DIR }} fmt -check -recursive
         continue-on-error: true
 
       - name: Terraform Init
         id: init
-        run: terraform init -backend=false ${{ env.TERRAFORM_DIR }}
+        run: terraform -chdir=${{ env.TERRAFORM_DIR }} init -backend=false
 
       - name: Terraform Validate
         id: validate
-        run: terraform validate -no-color ${{ env.TERRAFORM_DIR }}
+        run: terraform -chdir=${{ env.TERRAFORM_DIR }} validate -no-color
 
       - name: Terraform Plan
         id: plan
         run: |
-          terraform plan -no-color -out=tfplan ${{ env.TERRAFORM_DIR }}
+          terraform -chdir=${{ env.TERRAFORM_DIR }} plan -no-color -out=tfplan
         continue-on-error: true
 
       - name: Check for changes
@@ -128,13 +128,12 @@ jobs:
         id: deploy
         run: |
           echo "🚀 Deploying new demo infrastructure..."
-          cd ${{ env.TERRAFORM_DIR }}
-          terraform init
-          terraform apply -auto-approve
+          terraform -chdir=${{ env.TERRAFORM_DIR }} init
+          terraform -chdir=${{ env.TERRAFORM_DIR }} apply -auto-approve
 
           # Get instance details
-          INSTANCE_ID=$(terraform output -raw instance_id)
-          PUBLIC_IP=$(terraform output -raw instance_public_ip)
+          INSTANCE_ID=$(terraform -chdir=${{ env.TERRAFORM_DIR }} output -raw instance_id)
+          PUBLIC_IP=$(terraform -chdir=${{ env.TERRAFORM_DIR }} output -raw instance_public_ip)
 
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
           echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT

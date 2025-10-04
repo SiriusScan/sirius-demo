@@ -57,10 +57,10 @@ jobs:
       - name: Terraform Format Check
         run: |
           echo "🔍 Checking Terraform formatting..."
-          terraform fmt -check -recursive ${{ env.TERRAFORM_DIR }}
+          terraform -chdir=${{ env.TERRAFORM_DIR }} fmt -check -recursive
           if [ $? -ne 0 ]; then
             echo "❌ Terraform files are not properly formatted"
-            echo "Run 'terraform fmt -recursive ${{ env.TERRAFORM_DIR }}' to fix"
+            echo "Run 'terraform -chdir=${{ env.TERRAFORM_DIR }} fmt -recursive' to fix"
             exit 1
           fi
           echo "✅ Terraform formatting is correct"
@@ -68,12 +68,12 @@ jobs:
       - name: Terraform Init
         run: |
           echo "🔧 Initializing Terraform..."
-          terraform init -backend=false ${{ env.TERRAFORM_DIR }}
+          terraform -chdir=${{ env.TERRAFORM_DIR }} init -backend=false
 
       - name: Terraform Validate
         run: |
           echo "✅ Validating Terraform configuration..."
-          terraform validate -no-color ${{ env.TERRAFORM_DIR }}
+          terraform -chdir=${{ env.TERRAFORM_DIR }} validate -no-color
           if [ $? -ne 0 ]; then
             echo "❌ Terraform validation failed"
             exit 1
