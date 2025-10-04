@@ -20,7 +20,7 @@ on:
         type: boolean
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-west-2
   TERRAFORM_DIR: infra/demo
 
 jobs:

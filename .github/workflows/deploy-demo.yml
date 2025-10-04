@@ -40,7 +40,7 @@ on:
       - ".github/workflows/**"
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-west-2
   TERRAFORM_DIR: infra/demo
   DEMO_INSTANCE_TYPE: t2.large
 

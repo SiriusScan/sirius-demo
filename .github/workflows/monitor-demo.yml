@@ -25,7 +25,7 @@ on:
         type: string
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-west-2
   ALERT_THRESHOLD: ${{ github.event.inputs.alert_threshold || '30' }}
 
 jobs:
