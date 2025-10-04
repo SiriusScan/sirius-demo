@@ -18,15 +18,6 @@ on:
         required: false
         default: "false"
         type: boolean
-      domain:
-        description: "Domain name for DNS update (e.g., yourdomain.com)"
-        required: false
-        type: string
-      subdomain:
-        description: "Subdomain for demo (default: demo)"
-        required: false
-        default: "demo"
-        type: string
 
   # Trigger on changes to infrastructure or demo code
   push:
@@ -226,13 +217,13 @@ jobs:
             exit 1
           fi
 
-      - name: Update DNS (if domain provided)
-        if: github.event.inputs.domain != '' && steps.health.outcome == 'success'
+      - name: Update DNS
+        if: steps.health.outcome == 'success'
         run: |
-          echo "🌐 Updating DNS record..."
+          echo "🌐 Updating DNS record for sirius.opensecurity.com..."
           PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
-          DOMAIN="${{ github.event.inputs.domain }}"
-          SUBDOMAIN="${{ github.event.inputs.subdomain || 'demo' }}"
+          DOMAIN="opensecurity.com"
+          SUBDOMAIN="sirius"
 
           # Run DNS update script
           chmod +x scripts/update-dns.sh
@@ -278,8 +269,9 @@ jobs:
           - **API**: http://$PUBLIC_IP:9001
           - **Health Check**: http://$PUBLIC_IP:9001/health
           
-          ## DNS (if configured)
-          ${{ github.event.inputs.domain != '' && format('- **Domain**: http://{0}.{1}:3000', github.event.inputs.subdomain || 'demo', github.event.inputs.domain) || '- **Domain**: Not configured' }}
+          ## Domain Access
+          - **UI**: http://sirius.opensecurity.com:3000
+          - **API**: http://sirius.opensecurity.com:9001
 
           ## SSM Access
           \`\`\`bash

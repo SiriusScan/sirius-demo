@@ -15,6 +15,7 @@ The demo deployment can automatically update DNS records when a new instance is 
 **Setup Steps:**
 
 1. **Create Route 53 Hosted Zone**
+
    ```bash
    # Via AWS CLI
    aws route53 create-hosted-zone \
@@ -23,6 +24,7 @@ The demo deployment can automatically update DNS records when a new instance is 
    ```
 
 2. **Update Your Domain's Nameservers**
+
    - Copy the nameservers from Route 53
    - Update your domain registrar with these nameservers
    - Wait for propagation (can take up to 48 hours)
@@ -44,11 +46,13 @@ The demo deployment can automatically update DNS records when a new instance is 
 **Setup Steps:**
 
 1. **Add Domain to Cloudflare**
+
    - Sign up at cloudflare.com
    - Add your domain
    - Update nameservers at your registrar
 
 2. **Get API Token**
+
    - Go to Cloudflare Dashboard → My Profile → API Tokens
    - Create token with Zone:Edit permissions
 
@@ -63,6 +67,7 @@ The demo deployment can automatically update DNS records when a new instance is 
 **Best for:** Production-ready, SSL termination, health checks
 
 **Benefits:**
+
 - Static IP address
 - SSL certificate support
 - Built-in health checks
@@ -71,12 +76,14 @@ The demo deployment can automatically update DNS records when a new instance is 
 ## 🚀 Usage Examples
 
 ### Basic Deployment (IP only)
+
 ```bash
 gh workflow run deploy-demo.yml
 # Result: http://34.219.87.111:3000
 ```
 
 ### Deployment with DNS
+
 ```bash
 gh workflow run deploy-demo.yml \
   --field domain="yourdomain.com" \
@@ -85,6 +92,7 @@ gh workflow run deploy-demo.yml \
 ```
 
 ### Custom Subdomain
+
 ```bash
 gh workflow run deploy-demo.yml \
   --field domain="yourdomain.com" \
@@ -129,16 +137,19 @@ For Route 53 DNS updates, your AWS access keys need:
 ## 🐛 Troubleshooting
 
 ### DNS Not Updating
+
 - Check if hosted zone exists: `aws route53 list-hosted-zones`
 - Verify nameservers are updated at your registrar
 - Check AWS permissions for Route 53
 
 ### Domain Not Resolving
+
 - Wait for DNS propagation (up to 48 hours)
 - Check with `nslookup` or `dig`
-. Verify the subdomain is correct
+  . Verify the subdomain is correct
 
 ### Workflow Fails on DNS Step
+
 - Check GitHub Actions logs for specific error
 - Verify domain format (no http://, no trailing slash)
 - Ensure subdomain doesn't conflict with existing records
