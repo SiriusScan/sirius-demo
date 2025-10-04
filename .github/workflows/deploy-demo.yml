@@ -119,38 +119,12 @@ jobs:
         id: destroy
         run: |
           echo "🗑️ Destroying existing demo infrastructure..."
-
-          # Clean up existing EC2 instances first
-          echo "Cleaning up existing EC2 instances..."
-          INSTANCE_IDS=$(aws ec2 describe-instances --region us-west-2 --filters "Name=tag:Name,Values=sirius-demo" "Name=instance-state-name,Values=running,pending" --query 'Reservations[*].Instances[*].InstanceId' --output text 2>/dev/null || echo "")
-          if [ ! -z "$INSTANCE_IDS" ] && [ "$INSTANCE_IDS" != "None" ]; then
-            echo "Terminating instances: $INSTANCE_IDS"
-            aws ec2 terminate-instances --instance-ids $INSTANCE_IDS --region us-west-2
-            echo "Waiting for instances to terminate..."
-            aws ec2 wait instance-terminated --instance-ids $INSTANCE_IDS --region us-west-2
-          fi
-
-          # Clean up existing security groups
-          echo "Cleaning up existing security groups..."
-          SG_ID=$(aws ec2 describe-security-groups --region us-west-2 --filters "Name=group-name,Values=sirius-demo-sg" "Name=vpc-id,Values=vpc-416eeb39" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "None")
-          if [ ! -z "$SG_ID" ] && [ "$SG_ID" != "None" ]; then
-            echo "Deleting security group: $SG_ID"
-            aws ec2 delete-security-group --group-id $SG_ID --region us-west-2
-          fi
-
-          # Clean up existing IAM resources
-          echo "Cleaning up existing IAM resources..."
-          # Detach policies first
-          aws iam detach-role-policy --role-name sirius-demo-instance-role --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy --region us-west-2 2>/dev/null || true
-          aws iam detach-role-policy --role-name sirius-demo-instance-role --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore --region us-west-2 2>/dev/null || true
-
-          # Delete instance profile first (if it exists)
-          aws iam delete-instance-profile --instance-profile-name sirius-demo-instance-profile --region us-west-2 2>/dev/null || true
-
-          # Delete role
-          aws iam delete-role --role-name sirius-demo-instance-role --region us-west-2 2>/dev/null || true
-
-          echo "Cleanup completed!"
+          
+          # Use comprehensive cleanup script
+          chmod +x scripts/cleanup-aws-resources.sh
+          ./scripts/cleanup-aws-resources.sh
+          
+          echo "✅ Cleanup completed!"
         continue-on-error: true
 
       - name: Wait for cleanup
@@ -268,7 +242,7 @@ jobs:
           - **UI**: http://$PUBLIC_IP:3000
           - **API**: http://$PUBLIC_IP:9001
           - **Health Check**: http://$PUBLIC_IP:9001/health
-          
+
           ## Domain Access
           - **UI**: http://sirius.opensecurity.com:3000
           - **API**: http://sirius.opensecurity.com:9001

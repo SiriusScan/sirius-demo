@@ -44,7 +44,7 @@ data "aws_ami" "ubuntu" {
 
 # Security Group for demo instance
 resource "aws_security_group" "demo" {
-  name        = "sirius-demo-sg"
+  name_prefix = "sirius-demo-sg-"
   description = "Security group for SiriusScan demo environment"
   vpc_id      = var.vpc_id
 
@@ -95,11 +95,15 @@ resource "aws_security_group" "demo" {
   tags = {
     Name = "sirius-demo-sg"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # IAM role for EC2 instance (for SSM access)
 resource "aws_iam_role" "demo_instance" {
-  name = "sirius-demo-instance-role"
+  name_prefix = "sirius-demo-instance-role-"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -133,8 +137,8 @@ resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
 
 # Instance profile
 resource "aws_iam_instance_profile" "demo" {
-  name = "sirius-demo-instance-profile"
-  role = aws_iam_role.demo_instance.name
+  name_prefix = "sirius-demo-instance-profile-"
+  role        = aws_iam_role.demo_instance.name
 
   tags = {
     Name = "sirius-demo-instance-profile"
