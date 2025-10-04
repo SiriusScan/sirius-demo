@@ -18,6 +18,15 @@ on:
         required: false
         default: "false"
         type: boolean
+      domain:
+        description: "Domain name for DNS update (e.g., yourdomain.com)"
+        required: false
+        type: string
+      subdomain:
+        description: "Subdomain for demo (default: demo)"
+        required: false
+        default: "demo"
+        type: string
 
   # Trigger on changes to infrastructure or demo code
   push:
@@ -119,7 +128,7 @@ jobs:
         id: destroy
         run: |
           echo "🗑️ Destroying existing demo infrastructure..."
-          
+
           # Clean up existing EC2 instances first
           echo "Cleaning up existing EC2 instances..."
           INSTANCE_IDS=$(aws ec2 describe-instances --region us-west-2 --filters "Name=tag:Name,Values=sirius-demo" "Name=instance-state-name,Values=running,pending" --query 'Reservations[*].Instances[*].InstanceId' --output text 2>/dev/null || echo "")
@@ -129,7 +138,7 @@ jobs:
             echo "Waiting for instances to terminate..."
             aws ec2 wait instance-terminated --instance-ids $INSTANCE_IDS --region us-west-2
           fi
-          
+
           # Clean up existing security groups
           echo "Cleaning up existing security groups..."
           SG_ID=$(aws ec2 describe-security-groups --region us-west-2 --filters "Name=group-name,Values=sirius-demo-sg" "Name=vpc-id,Values=vpc-416eeb39" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "None")
@@ -137,19 +146,19 @@ jobs:
             echo "Deleting security group: $SG_ID"
             aws ec2 delete-security-group --group-id $SG_ID --region us-west-2
           fi
-          
+
           # Clean up existing IAM resources
           echo "Cleaning up existing IAM resources..."
           # Detach policies first
           aws iam detach-role-policy --role-name sirius-demo-instance-role --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy --region us-west-2 2>/dev/null || true
           aws iam detach-role-policy --role-name sirius-demo-instance-role --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore --region us-west-2 2>/dev/null || true
-          
+
           # Delete instance profile first (if it exists)
           aws iam delete-instance-profile --instance-profile-name sirius-demo-instance-profile --region us-west-2 2>/dev/null || true
-          
+
           # Delete role
           aws iam delete-role --role-name sirius-demo-instance-role --region us-west-2 2>/dev/null || true
-          
+
           echo "Cleanup completed!"
         continue-on-error: true
 
@@ -190,15 +199,24 @@ jobs:
           echo "🔍 Performing health checks..."
           PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
 
-          # Wait for API to be ready (up to 10 minutes)
-          for i in {1..40}; do
+          # Wait for API to be ready (up to 20 minutes with longer intervals)
+          for i in {1..60}; do
             if curl -f -s http://$PUBLIC_IP:9001/health > /dev/null; then
               echo "✅ API is healthy"
               break
             fi
-            echo "⏳ Waiting for API... (attempt $i/40)"
-            sleep 15
+            echo "⏳ Waiting for API... (attempt $i/60)"
+            sleep 20
           done
+
+          # Final API check
+          if ! curl -f -s http://$PUBLIC_IP:9001/health > /dev/null; then
+            echo "❌ API health check failed after 20 minutes"
+            echo "Checking API logs for debugging..."
+            # Try to get some debugging info
+            curl -v http://$PUBLIC_IP:9001/health || true
+            exit 1
+          fi
 
           # Check UI
           if curl -f -s -I http://$PUBLIC_IP:3000 > /dev/null; then
@@ -207,6 +225,18 @@ jobs:
             echo "❌ UI health check failed"
             exit 1
           fi
+
+      - name: Update DNS (if domain provided)
+        if: github.event.inputs.domain != '' && steps.health.outcome == 'success'
+        run: |
+          echo "🌐 Updating DNS record..."
+          PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
+          DOMAIN="${{ github.event.inputs.domain }}"
+          SUBDOMAIN="${{ github.event.inputs.subdomain || 'demo' }}"
+
+          # Run DNS update script
+          chmod +x scripts/update-dns.sh
+          ./scripts/update-dns.sh $PUBLIC_IP $DOMAIN $SUBDOMAIN || echo "⚠️ DNS update failed, but deployment continues"
 
       - name: Seed demo data
         if: github.event.inputs.skip_seeding != 'true' && steps.health.outcome == 'success'
@@ -247,6 +277,9 @@ jobs:
           - **UI**: http://$PUBLIC_IP:3000
           - **API**: http://$PUBLIC_IP:9001
           - **Health Check**: http://$PUBLIC_IP:9001/health
+          
+          ## DNS (if configured)
+          ${{ github.event.inputs.domain != '' && format('- **Domain**: http://{0}.{1}:3000', github.event.inputs.subdomain || 'demo', github.event.inputs.domain) || '- **Domain**: Not configured' }}
 
           ## SSM Access
           \`\`\`bash
