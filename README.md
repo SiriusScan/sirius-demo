@@ -1,111 +1,58 @@
-# SiriusScan Demo - Continuous Rebuild Infrastructure
+# SiriusScan Demo - Automated Infrastructure as Code
 
-> **Automated demo environment for SiriusScan that rebuilds nightly and on every code change**
+[![Deploy Demo](https://github.com/SiriusScan/sirius-demo/actions/workflows/deploy-demo.yml/badge.svg)](https://github.com/SiriusScan/sirius-demo/actions/workflows/deploy-demo.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🎯 Quick Start
+A fully automated, production-ready demo deployment of SiriusScan using Infrastructure as Code (IaC) with GitHub Actions CI/CD, AWS Route 53 DNS management, and comprehensive monitoring.
 
+## 🚀 Quick Start
+
+### **Live Demo Access**
+- **UI**: http://sirius.opensecurity.com:3000
+- **API**: http://sirius.opensecurity.com:9001
+- **Health Check**: http://sirius.opensecurity.com:9001/health
+
+### **Deploy Your Own**
 ```bash
-# Setup GitHub Actions (first time only)
-./scripts/setup-github-actions.sh
+# Clone the repository
+git clone https://github.com/SiriusScan/sirius-demo.git
+cd sirius-demo
 
-# Trigger a rebuild (requires GitHub Actions access)
+# Configure AWS credentials
+aws configure
+
+# Deploy with GitHub Actions
 gh workflow run deploy-demo.yml
 
-# Access the demo
-# URL will be provided after deployment: http://<ec2-public-ip>:3000
+# Or deploy manually
+cd infra/demo
+terraform init
+terraform apply
 ```
-
-**Demo Credentials** (displayed on login page in demo mode):
-
-- Username: `demo@siriusscan.io`
-- Password: `demo`
-
-## 📋 Project Overview
-
-This repository contains the Infrastructure as Code (IaC) and automation for a continuously rebuilt demo environment of SiriusScan. The demo:
-
-- **Rebuilds automatically** every night at 23:59 UTC
-- **Rebuilds on code changes** when pushed to `demo` branch in SiriusScan repo
-- **Seeds realistic data** representing "Ellingson Mineral Company" corporate network
-- **Validates deployability** by ensuring the stack can build from scratch
-
-### Why This Exists
-
-1. **Always Fresh**: Prospects and users always see the latest version
-2. **Deployment Validation**: Continuous verification that SiriusScan can be deployed cleanly
-3. **Sales Enablement**: Reliable demo environment for sales and community engagement
-4. **Foundation for Scale**: Architecture ready to scale to multi-tenant demo platform
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     GitHub Actions                          │
-│  Triggers: Nightly Schedule + Push to demo branch          │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Terraform                              │
-│  Destroys old infrastructure → Creates fresh EC2 instance   │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   EC2 Instance (t3.medium)                  │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  Bootstrap Script (user-data):                       │  │
-│  │  1. Install Docker, dependencies                     │  │
-│  │  2. Clone SiriusScan repo (demo branch)             │  │
-│  │  3. Launch docker-compose stack                      │  │
-│  │  4. Wait for API health                              │  │
-│  │  5. Seed demo data (Ellingson fixtures)             │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                             │
-│  Running Services:                                          │
-│  • sirius-ui (port 3000)                                   │
-│  • sirius-api (port 9001)                                  │
-│  • sirius-engine (port 5174)                               │
-│  • PostgreSQL, RabbitMQ, Valkey                            │
-└─────────────────────────────────────────────────────────────┘
-```
+### **Infrastructure Stack**
+- **Compute**: AWS EC2 (t2.large, 4 vCPU, 8GB RAM)
+- **Networking**: VPC with public subnet, security groups
+- **DNS**: AWS Route 53 with automatic updates
+- **Monitoring**: CloudWatch integration
+- **Access**: AWS SSM Session Manager (no SSH keys needed)
 
-## 🤖 GitHub Actions Workflows
+### **Application Stack**
+- **Frontend**: Next.js UI (Port 3000)
+- **Backend**: Go API with PostgreSQL (Port 9001)
+- **Engine**: SiriusScan scanning engine
+- **Database**: PostgreSQL with automated migrations
+- **Message Queue**: RabbitMQ for async processing
+- **Cache**: Valkey (Redis-compatible)
 
-The demo environment is fully automated using GitHub Actions workflows:
-
-### Core Workflows
-
-| Workflow            | Purpose                                  | Trigger                    | Frequency         |
-| ------------------- | ---------------------------------------- | -------------------------- | ----------------- |
-| **Deploy Demo**     | Deploy/rebuild demo environment          | Schedule, Push, PR, Manual | Daily at 2 AM UTC |
-| **Cleanup**         | Remove old resources to manage costs     | Schedule, Manual           | Every 6 hours     |
-| **Test Deployment** | Validate configuration without deploying | PR, Manual                 | On every PR       |
-| **Monitor Demo**    | Health checks and status monitoring      | Schedule, Manual           | Every 2 hours     |
-
-### Key Features
-
-- **AWS Access Keys**: Simple AWS authentication using access keys
-- **Automated Health Checks**: API and UI service validation
+### **CI/CD Pipeline**
+- **Automated Deployments**: GitHub Actions workflows
+- **Infrastructure as Code**: Terraform with remote state
+- **DNS Management**: Automatic Route 53 updates
+- **Health Monitoring**: Comprehensive service checks
 - **Cost Management**: Automatic cleanup of old resources
-- **PR Integration**: Validation and deployment testing on pull requests
-- **Monitoring & Alerts**: Automatic issue creation for health problems
-
-### Setup
-
-```bash
-# Run the setup script to configure GitHub Actions
-./scripts/setup-github-actions.sh
-
-# Manual workflow triggers
-gh workflow run deploy-demo.yml
-gh workflow run cleanup.yml
-gh workflow run monitor-demo.yml
-```
-
-For detailed workflow documentation, see [.github/workflows/README.md](.github/workflows/README.md).
-
-For AWS setup instructions, see [docs/AWS_ACCESS_KEYS_SETUP.md](docs/AWS_ACCESS_KEYS_SETUP.md).
 
 ## 📁 Repository Structure
 
@@ -125,187 +72,281 @@ sirius-demo/
 │       ├── outputs.tf              # Exported values (URLs, IPs)
 │       └── user_data.sh            # EC2 bootstrap script
 ├── scripts/
-│   ├── setup-github-actions.sh     # GitHub Actions setup
+│   ├── cleanup-aws-resources.sh    # Comprehensive AWS cleanup
+│   ├── update-dns.sh               # DNS update automation
 │   ├── monitor_demo.sh             # Deployment monitoring
 │   ├── wait_for_api.sh             # Health check poller
 │   └── seed_demo.sh                # Data seeding automation
+├── docs/
+│   ├── DNS_SETUP_GUIDE.md          # DNS configuration guide
+│   └── AWS_ACCESS_KEYS_SETUP.md    # AWS setup instructions
 ├── fixtures/
 │   ├── it-environment/             # Corporate IT hosts
 │   ├── ot-environment/             # Industrial OT hosts
 │   ├── index.json                  # Master fixture list
 │   └── README.md                   # Demo data documentation
-├── docs/
-│   ├── RUNBOOK.md                  # Operational procedures
-│   ├── TROUBLESHOOTING.md          # Issue resolution guide
-│   └── ARCHITECTURE.md             # Detailed design
-├── tasks/
-│   └── tasks.json                  # Project task breakdown
-├── PROJECT_PLAN.md                 # High-level project plan
-├── PRD.txt                         # Product requirements
-└── README.md                       # This file
+└── data/
+    └── host-record.json            # Example host data
 ```
 
-## 🚀 Deployment
+## 🤖 GitHub Actions Workflows
 
-### Prerequisites
+### **Core Workflows**
 
-- AWS account with EC2 access
-- GitHub repository access
-- Terraform installed locally (for testing)
+| Workflow | Purpose | Trigger | Frequency |
+|----------|---------|---------|-----------|
+| **Deploy Demo** | Deploy/rebuild demo environment | Schedule, Push, Manual | Daily at 2 AM UTC |
+| **Cleanup** | Remove old resources to manage costs | Schedule, Manual | Every 6 hours |
+| **Test Deployment** | Validate configuration without deploying | PR, Manual | On every PR |
+| **Monitor Demo** | Health checks and status monitoring | Schedule, Manual | Every 2 hours |
 
-### Initial Setup
+### **Key Features**
+- **Automatic DNS Updates**: Updates `sirius.opensecurity.com` on every deployment
+- **Comprehensive Cleanup**: Removes all AWS resources before new deployment
+- **Health Monitoring**: 20-minute health checks with detailed error reporting
+- **Cost Management**: Automatic cleanup of unused resources
+- **PR Integration**: Validation and deployment testing on pull requests
 
-**USER ACTION REQUIRED**: Complete these steps before first deployment:
+### **Manual Deployment**
+```bash
+# Deploy with all features
+gh workflow run deploy-demo.yml
 
-1. **Create GitHub Repository Secrets**:
+# Deploy without data seeding
+gh workflow run deploy-demo.yml --field skip_seeding=true
 
-   - `AWS_ACCESS_KEY_ID`: AWS access key
-   - `AWS_SECRET_ACCESS_KEY`: AWS secret key
-   - `AWS_REGION`: Deployment region (e.g., `us-east-1`)
-
-2. **Configure Terraform Variables**:
-
-   - Copy `infra/demo/terraform.tfvars.example` to `terraform.tfvars`
-   - Update with your VPC ID and Subnet ID
-
-3. **Trigger First Build**:
-   ```bash
-   gh workflow run rebuild-demo.yml
-   ```
-
-### Ongoing Operation
-
-Once set up, the demo automatically rebuilds:
-
-- **Nightly**: Every day at 23:59 UTC
-- **On Push**: When code is pushed to `demo` branch in SiriusScan repo
-
-## 🎭 Demo Data: Ellingson Mineral Company
-
-The demo environment simulates a corporate network for "Ellingson Mineral Company" (a nod to Hackers, 1995):
-
-- **IT Environment** (10.0.0.0/16): Domain controllers, file servers, web servers, workstations
-- **OT Environment** (192.168.50.0/24): SCADA systems, PLCs, HMI stations
-- **Total Hosts**: 12-15 hosts with realistic vulnerabilities
-- **OS Mix**: Windows Server (2012-2019), Windows 10, Ubuntu, CentOS
-- **Vulnerabilities**: Mix of critical, high, and medium severity CVEs
-
-See [`fixtures/README.md`](fixtures/README.md) for complete network topology.
-
-## 📊 Monitoring
-
-### Rebuild Status
-
-- **GitHub Actions**: Check workflow runs at `.github/workflows/rebuild-demo.yml`
-- **Artifacts**: Seed logs and Terraform outputs available in workflow artifacts
-
-### Demo Health
-
-- **Health Endpoint**: `http://<demo-ip>:9001/health`
-- **UI**: `http://<demo-ip>:3000`
-
-### Troubleshooting
-
-See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for common issues and solutions.
+# Force rebuild even if no changes
+gh workflow run deploy-demo.yml --field force_rebuild=true
+```
 
 ## 🔧 Configuration
 
-### Environment Variables (Demo Mode)
+### **Environment Variables**
+```bash
+# Required
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
 
-The SiriusScan application detects demo mode via `DEMO_MODE=true` environment variable, which:
+# Optional (with defaults)
+AWS_REGION=us-west-2
+DEMO_INSTANCE_TYPE=t2.large
+```
 
-- Hides scan functionality
-- Shows login tutorial panel with credentials
-- Displays "This is a demo" banner
+### **Terraform Variables**
+```hcl
+# Network Configuration
+vpc_id    = "vpc-416eeb39"      # Your VPC ID
+subnet_id = "subnet-d31ffe8e"    # Your public subnet ID
 
-### Terraform Variables
+# Instance Configuration
+instance_type    = "t2.large"    # 4 vCPU, 8GB RAM
+root_volume_size = 30            # GB
 
-Key configurable parameters in `infra/demo/variables.tf`:
+# Access Control
+allowed_cidrs = ["0.0.0.0/0"]    # Public access for demo
 
-- `instance_type`: EC2 instance size (default: `t3.medium`)
-- `root_volume_size`: Disk size in GB (default: `30`)
-- `vpc_id`, `subnet_id`: Network configuration
-- `allowed_cidrs`: IP ranges allowed to access demo (default: `0.0.0.0/0`)
+# Repository Configuration
+sirius_repo_url = "https://github.com/SiriusScan/Sirius.git"
+demo_branch     = "demo"
+```
 
-## 💰 Cost Estimate
+## 🌐 DNS Management
 
-**Monthly AWS costs** (approximate):
+### **Automatic DNS Updates**
+The deployment automatically updates DNS records for consistent access:
 
-- EC2 t3.medium: ~$30-35/month
-- EBS storage (30GB): ~$2.40/month
-- Data transfer: ~$1-5/month
-- **Total**: ~$35-45/month
+- **Domain**: `sirius.opensecurity.com`
+- **UI**: `http://sirius.opensecurity.com:3000`
+- **API**: `http://sirius.opensecurity.com:9001`
+
+### **DNS Setup Requirements**
+1. **Route 53 Hosted Zone**: `opensecurity.com` (already configured)
+2. **Nameservers**: Update your domain registrar with AWS nameservers
+3. **Propagation**: Allow 24-48 hours for full DNS propagation
+
+### **Manual DNS Update**
+```bash
+# Update DNS manually
+./scripts/update-dns.sh 34.219.87.111 opensecurity.com sirius
+
+# Check DNS resolution
+nslookup sirius.opensecurity.com
+```
+
+## 📊 Monitoring & Health Checks
+
+### **Service Health**
+- **API Health**: `http://sirius.opensecurity.com:9001/health`
+- **UI Health**: `http://sirius.opensecurity.com:3000`
+- **Instance Status**: AWS EC2 Console
+
+### **Monitoring Features**
+- **Automatic Health Checks**: 20-minute timeout with retry logic
+- **Service Verification**: API and UI endpoint validation
+- **Error Reporting**: Detailed logs for troubleshooting
+- **Cost Monitoring**: Automatic cleanup of unused resources
+
+### **Access Logs**
+```bash
+# Connect to instance via SSM
+aws ssm start-session --target i-xxxxxxxxx --region us-west-2
+
+# Check service logs
+docker compose logs sirius-api
+docker compose logs sirius-ui
+```
+
+## 💰 Cost Management
+
+### **Resource Costs**
+- **EC2 Instance**: ~$0.0928/hour (t2.large)
+- **EBS Storage**: ~$0.10/GB/month
+- **Route 53**: ~$0.50/month per hosted zone
+- **Data Transfer**: Minimal for demo usage
+
+### **Cost Optimization**
+- **Automatic Cleanup**: Old resources removed every 6 hours
+- **Scheduled Deployments**: Daily rebuilds to prevent long-running instances
+- **Resource Tagging**: Clear ownership and purpose tags
+- **Monitoring**: Cost alerts and usage tracking
+
+### **Estimated Monthly Cost**
+- **Development**: ~$67/month (if running 24/7)
+- **Demo Usage**: ~$20/month (with cleanup)
+- **Production**: Contact for enterprise pricing
 
 ## 🛠️ Development
 
-### Testing Locally
+### **Local Development**
+```bash
+# Clone the main SiriusScan repository
+git clone https://github.com/SiriusScan/Sirius.git
+cd Sirius
 
+# Switch to demo branch
+git checkout demo
+
+# Run locally with Docker Compose
+docker compose up -d
+```
+
+### **Contributing**
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test with `gh workflow run test-deployment.yml`
+5. Submit a pull request
+
+### **Testing**
 ```bash
 # Test Terraform configuration
 cd infra/demo
 terraform init
+terraform validate
 terraform plan
 
-# Test demo data seeding
-cd ../../
-./scripts/wait_for_api.sh http://localhost:9001
-./scripts/seed_demo.sh http://localhost:9001
+# Test deployment workflow
+gh workflow run test-deployment.yml
+
+# Test cleanup script
+./scripts/cleanup-aws-resources.sh
 ```
 
-### Adding Demo Hosts
+## 🔒 Security
 
-1. Create new fixture file in `fixtures/it-environment/` or `fixtures/ot-environment/`
-2. Follow schema from existing examples
-3. Add to `fixtures/index.json`
-4. Test with local API: `curl -X POST http://localhost:9001/host -d @fixtures/your-new-host.json`
+### **Security Features**
+- **No SSH Keys**: Uses AWS SSM Session Manager
+- **Encrypted Storage**: EBS volumes encrypted at rest
+- **Network Security**: Security groups with minimal required access
+- **IAM Roles**: Least privilege access for EC2 instances
+- **Resource Tagging**: Clear ownership and purpose
+
+### **Access Control**
+- **Public Demo**: Open access for demonstration purposes
+- **Production**: Contact for enterprise security configuration
+- **Monitoring**: All actions logged in AWS CloudTrail
+
+## 🚨 Troubleshooting
+
+### **Common Issues**
+
+#### **Deployment Fails**
+```bash
+# Check GitHub Actions logs
+gh run view --log
+
+# Verify AWS credentials
+aws sts get-caller-identity
+
+# Check resource cleanup
+./scripts/cleanup-aws-resources.sh
+```
+
+#### **Services Not Responding**
+```bash
+# Check instance status
+aws ec2 describe-instances --region us-west-2
+
+# Connect to instance
+aws ssm start-session --target i-xxxxxxxxx --region us-west-2
+
+# Check service logs
+docker compose logs
+```
+
+#### **DNS Not Resolving**
+```bash
+# Check DNS record
+aws route53 list-resource-record-sets --hosted-zone-id Z0946222JHY5QRB4CPV2
+
+# Test DNS resolution
+nslookup sirius.opensecurity.com
+dig sirius.opensecurity.com
+```
+
+### **Debug Commands**
+```bash
+# Check all demo resources
+aws ec2 describe-instances --filters "Name=tag:Name,Values=sirius-demo"
+aws ec2 describe-security-groups --filters "Name=group-name,Values=sirius-demo-sg*"
+aws iam list-roles --query "Roles[?contains(RoleName, 'sirius-demo')]"
+
+# Test health endpoints
+curl -f http://sirius.opensecurity.com:9001/health
+curl -I http://sirius.opensecurity.com:3000
+```
 
 ## 📚 Documentation
 
-- **[Project Plan](PROJECT_PLAN.md)**: High-level overview and timeline
-- **[PRD](PRD.txt)**: Detailed product requirements
-- **[Runbook](docs/RUNBOOK.md)**: Operational procedures
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Common issues and fixes
-- **[Architecture](docs/ARCHITECTURE.md)**: Detailed design documentation
+### **Additional Resources**
+- [DNS Setup Guide](docs/DNS_SETUP_GUIDE.md) - Complete DNS configuration
+- [AWS Setup Guide](docs/AWS_ACCESS_KEYS_SETUP.md) - AWS credentials setup
+- [Workflow Documentation](.github/workflows/README.md) - GitHub Actions details
+- [Demo Data Guide](fixtures/README.md) - Sample data and fixtures
 
-## 🗺️ Roadmap
-
-### ✅ MVP (Current)
-
-- Automated nightly rebuilds
-- Demo data seeding
-- Basic monitoring via GitHub Actions
-
-### 🔜 Future Enhancements
-
-- Slack/email notifications on failures
-- TLS/HTTPS with custom domain
-- Blue/green deployments (zero downtime)
-- Usage analytics
-- Multi-region deployments
-
-See [Phase 8 in tasks.json](tasks/tasks.json) for complete future roadmap.
-
-## 🤝 Contributing
-
-This is an internal infrastructure project for SiriusScan demo. To contribute:
-
-1. Update demo data: Add/modify fixtures in `fixtures/`
-2. Improve infrastructure: Update Terraform in `infra/demo/`
-3. Enhance automation: Modify GitHub Actions workflow
-4. Document issues: Add to `docs/TROUBLESHOOTING.md`
+### **Related Projects**
+- [SiriusScan Main Repository](https://github.com/SiriusScan/Sirius) - Core application
+- [SiriusScan Website](https://siriusscan.com) - Official website
+- [Documentation](https://docs.siriusscan.com) - Complete documentation
 
 ## 📄 License
 
-This infrastructure code is part of the SiriusScan project.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📞 Support
+## 🤝 Support
 
-- **Issues**: Create GitHub issue in this repository
-- **Emergency**: Contact project maintainer
-- **Documentation**: See `docs/` directory
+### **Getting Help**
+- **Issues**: [GitHub Issues](https://github.com/SiriusScan/sirius-demo/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/SiriusScan/sirius-demo/discussions)
+- **Email**: support@siriusscan.com
+
+### **Enterprise Support**
+For enterprise deployments, custom configurations, or production support, contact:
+- **Email**: enterprise@siriusscan.com
+- **Website**: https://siriusscan.com/enterprise
 
 ---
 
-**Status**: 🚧 In Development  
-**Last Updated**: 2025-10-01  
-**Maintained By**: SiriusScan Team
+**Built with ❤️ by the SiriusScan Team**
+
+*Last updated: October 2024*
