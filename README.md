@@ -5,8 +5,11 @@
 ## 🎯 Quick Start
 
 ```bash
+# Setup GitHub Actions (first time only)
+./scripts/setup-github-actions.sh
+
 # Trigger a rebuild (requires GitHub Actions access)
-gh workflow run rebuild-demo.yml
+gh workflow run deploy-demo.yml
 
 # Access the demo
 # URL will be provided after deployment: http://<ec2-public-ip>:3000
@@ -67,13 +70,54 @@ This repository contains the Infrastructure as Code (IaC) and automation for a c
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## 🤖 GitHub Actions Workflows
+
+The demo environment is fully automated using GitHub Actions workflows:
+
+### Core Workflows
+
+| Workflow            | Purpose                                  | Trigger                    | Frequency         |
+| ------------------- | ---------------------------------------- | -------------------------- | ----------------- |
+| **Deploy Demo**     | Deploy/rebuild demo environment          | Schedule, Push, PR, Manual | Daily at 2 AM UTC |
+| **Cleanup**         | Remove old resources to manage costs     | Schedule, Manual           | Every 6 hours     |
+| **Test Deployment** | Validate configuration without deploying | PR, Manual                 | On every PR       |
+| **Monitor Demo**    | Health checks and status monitoring      | Schedule, Manual           | Every 2 hours     |
+
+### Key Features
+
+- **AWS Access Keys**: Simple AWS authentication using access keys
+- **Automated Health Checks**: API and UI service validation
+- **Cost Management**: Automatic cleanup of old resources
+- **PR Integration**: Validation and deployment testing on pull requests
+- **Monitoring & Alerts**: Automatic issue creation for health problems
+
+### Setup
+
+```bash
+# Run the setup script to configure GitHub Actions
+./scripts/setup-github-actions.sh
+
+# Manual workflow triggers
+gh workflow run deploy-demo.yml
+gh workflow run cleanup.yml
+gh workflow run monitor-demo.yml
+```
+
+For detailed workflow documentation, see [.github/workflows/README.md](.github/workflows/README.md).
+
+For AWS setup instructions, see [docs/AWS_ACCESS_KEYS_SETUP.md](docs/AWS_ACCESS_KEYS_SETUP.md).
+
 ## 📁 Repository Structure
 
 ```
 sirius-demo/
 ├── .github/
 │   └── workflows/
-│       └── rebuild-demo.yml        # CI/CD automation
+│       ├── deploy-demo.yml         # Main deployment workflow
+│       ├── cleanup.yml             # Resource cleanup workflow
+│       ├── test-deployment.yml     # Configuration validation
+│       ├── monitor-demo.yml        # Health monitoring
+│       └── README.md               # Workflow documentation
 ├── infra/
 │   └── demo/
 │       ├── main.tf                 # Terraform infrastructure
@@ -81,6 +125,8 @@ sirius-demo/
 │       ├── outputs.tf              # Exported values (URLs, IPs)
 │       └── user_data.sh            # EC2 bootstrap script
 ├── scripts/
+│   ├── setup-github-actions.sh     # GitHub Actions setup
+│   ├── monitor_demo.sh             # Deployment monitoring
 │   ├── wait_for_api.sh             # Health check poller
 │   └── seed_demo.sh                # Data seeding automation
 ├── fixtures/

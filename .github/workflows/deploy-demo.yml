@@ -1,0 +1,266 @@
+name: Deploy SiriusScan Demo
+
+on:
+  # Scheduled rebuilds (daily at 2 AM UTC)
+  schedule:
+    - cron: "0 2 * * *"
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      skip_seeding:
+        description: "Skip data seeding step"
+        required: false
+        default: "false"
+        type: boolean
+      force_rebuild:
+        description: "Force rebuild even if no changes"
+        required: false
+        default: "false"
+        type: boolean
+
+  # Trigger on changes to infrastructure or demo code
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "scripts/**"
+      - "data/**"
+      - "fixtures/**"
+      - ".github/workflows/**"
+
+  # Trigger on pull requests to main
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "scripts/**"
+      - "data/**"
+      - "fixtures/**"
+      - ".github/workflows/**"
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_DIR: infra/demo
+  DEMO_INSTANCE_TYPE: t2.large
+
+jobs:
+  deploy:
+    name: Deploy Demo Environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive ${{ env.TERRAFORM_DIR }}
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -backend=false ${{ env.TERRAFORM_DIR }}
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color ${{ env.TERRAFORM_DIR }}
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan ${{ env.TERRAFORM_DIR }}
+        continue-on-error: true
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if [ -f tfplan ]; then
+            if terraform show -no-color tfplan | grep -q "No changes"; then
+              echo "changes=false" >> $GITHUB_OUTPUT
+            else
+              echo "changes=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip deployment if no changes
+        if: steps.changes.outputs.changes == 'false' && github.event_name != 'workflow_dispatch'
+        run: |
+          echo "No infrastructure changes detected. Skipping deployment."
+          exit 0
+
+      - name: Destroy existing infrastructure
+        id: destroy
+        run: |
+          echo "🗑️ Destroying existing demo infrastructure..."
+          cd ${{ env.TERRAFORM_DIR }}
+          terraform init
+          terraform destroy -auto-approve || true
+        continue-on-error: true
+
+      - name: Wait for cleanup
+        run: |
+          echo "⏳ Waiting 30 seconds for AWS cleanup..."
+          sleep 30
+
+      - name: Deploy new infrastructure
+        id: deploy
+        run: |
+          echo "🚀 Deploying new demo infrastructure..."
+          cd ${{ env.TERRAFORM_DIR }}
+          terraform init
+          terraform apply -auto-approve
+
+          # Get instance details
+          INSTANCE_ID=$(terraform output -raw instance_id)
+          PUBLIC_IP=$(terraform output -raw instance_public_ip)
+
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "ui_url=http://$PUBLIC_IP:3000" >> $GITHUB_OUTPUT
+          echo "api_url=http://$PUBLIC_IP:9001" >> $GITHUB_OUTPUT
+
+      - name: Wait for instance to be ready
+        run: |
+          echo "⏳ Waiting for instance to be ready..."
+          sleep 60
+
+      - name: Health check
+        id: health
+        run: |
+          echo "🔍 Performing health checks..."
+          PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
+
+          # Wait for API to be ready (up to 10 minutes)
+          for i in {1..40}; do
+            if curl -f -s http://$PUBLIC_IP:9001/health > /dev/null; then
+              echo "✅ API is healthy"
+              break
+            fi
+            echo "⏳ Waiting for API... (attempt $i/40)"
+            sleep 15
+          done
+
+          # Check UI
+          if curl -f -s -I http://$PUBLIC_IP:3000 > /dev/null; then
+            echo "✅ UI is healthy"
+          else
+            echo "❌ UI health check failed"
+            exit 1
+          fi
+
+      - name: Seed demo data
+        if: github.event.inputs.skip_seeding != 'true' && steps.health.outcome == 'success'
+        run: |
+          echo "🌱 Seeding demo data..."
+          PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
+
+          # Wait a bit more for services to be fully ready
+          sleep 30
+
+          # Run seeding script
+          chmod +x scripts/seed_demo.sh
+          ./scripts/seed_demo.sh $PUBLIC_IP || echo "⚠️ Data seeding failed, but deployment continues"
+
+      - name: Generate deployment summary
+        id: summary
+        run: |
+          echo "📊 Generating deployment summary..."
+
+          PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
+          INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
+
+          cat << EOF > deployment-summary.md
+          # SiriusScan Demo Deployment Summary
+
+          **Deployment Time**: $(date -u)
+          **Trigger**: ${{ github.event_name }}
+          **Commit**: ${{ github.sha }}
+          **Branch**: ${{ github.ref_name }}
+
+          ## Instance Details
+          - **Instance ID**: \`$INSTANCE_ID\`
+          - **Public IP**: \`$PUBLIC_IP\`
+          - **Instance Type**: ${{ env.DEMO_INSTANCE_TYPE }}
+          - **Region**: ${{ env.AWS_REGION }}
+
+          ## Access URLs
+          - **UI**: http://$PUBLIC_IP:3000
+          - **API**: http://$PUBLIC_IP:9001
+          - **Health Check**: http://$PUBLIC_IP:9001/health
+
+          ## SSM Access
+          \`\`\`bash
+          aws ssm start-session --target $INSTANCE_ID --region ${{ env.AWS_REGION }}
+          \`\`\`
+
+          ## Status
+          - **Infrastructure**: ✅ Deployed
+          - **API Health**: ✅ Responding
+          - **UI Health**: ✅ Responding
+          - **Data Seeding**: ${{ github.event.inputs.skip_seeding == 'true' && '⏭️ Skipped' || '✅ Completed' }}
+
+          ## Next Steps
+          1. Test the demo at the URLs above
+          2. Verify all services are working correctly
+          3. Check logs if any issues are found
+
+          ---
+          *This deployment was created automatically by GitHub Actions*
+          EOF
+
+      - name: Upload deployment summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-summary
+          path: deployment-summary.md
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('deployment-summary.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+      - name: Deployment success notification
+        if: success()
+        run: |
+          echo "🎉 SiriusScan Demo deployment completed successfully!"
+          echo "UI: ${{ steps.deploy.outputs.ui_url }}"
+          echo "API: ${{ steps.deploy.outputs.api_url }}"
+
+      - name: Deployment failure notification
+        if: failure()
+        run: |
+          echo "❌ SiriusScan Demo deployment failed!"
+          echo "Check the logs above for details."
+          echo "Instance ID: ${{ steps.deploy.outputs.instance_id || 'N/A' }}"

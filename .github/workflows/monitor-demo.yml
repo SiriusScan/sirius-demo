@@ -1,0 +1,303 @@
+name: Monitor Demo Environment
+
+on:
+  # Run monitoring every 2 hours
+  schedule:
+    - cron: "0 */2 * * *"
+
+  # Manual monitoring trigger
+  workflow_dispatch:
+    inputs:
+      check_health:
+        description: "Perform health checks"
+        required: false
+        default: "true"
+        type: boolean
+      check_costs:
+        description: "Check AWS costs"
+        required: false
+        default: "true"
+        type: boolean
+      alert_threshold:
+        description: "Alert if instance is down for more than X minutes"
+        required: false
+        default: "30"
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  ALERT_THRESHOLD: ${{ github.event.inputs.alert_threshold || '30' }}
+
+jobs:
+  monitor:
+    name: Monitor Demo Environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Find demo instances
+        id: find_instances
+        run: |
+          echo "🔍 Finding demo instances..."
+
+          # Get all running demo instances
+          INSTANCES=$(aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=SiriusDemo" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].[InstanceId,PublicIpAddress,LaunchTime,State.Name]' \
+            --output text)
+
+          if [ -z "$INSTANCES" ]; then
+            echo "instances_found=false" >> $GITHUB_OUTPUT
+            echo "No running demo instances found"
+          else
+            echo "instances_found=true" >> $GITHUB_OUTPUT
+            echo "Found instances:"
+            echo "$INSTANCES"
+            
+            # Get the most recent instance
+            LATEST_INSTANCE=$(echo "$INSTANCES" | head -n1 | awk '{print $1}')
+            LATEST_IP=$(echo "$INSTANCES" | head -n1 | awk '{print $2}')
+            
+            echo "instance_id=$LATEST_INSTANCE" >> $GITHUB_OUTPUT
+            echo "public_ip=$LATEST_IP" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip monitoring if no instances
+        if: steps.find_instances.outputs.instances_found == 'false'
+        run: |
+          echo "⚠️ No demo instances found to monitor"
+          echo "This could mean:"
+          echo "1. No instances are currently running"
+          echo "2. Instances are in a different state"
+          echo "3. Tagging is incorrect"
+          exit 0
+
+      - name: Health check
+        if: github.event.inputs.check_health != 'false' && steps.find_instances.outputs.instances_found == 'true'
+        id: health_check
+        run: |
+          echo "🏥 Performing health checks..."
+
+          PUBLIC_IP="${{ steps.find_instances.outputs.public_ip }}"
+          INSTANCE_ID="${{ steps.find_instances.outputs.instance_id }}"
+
+          # Check API health
+          API_HEALTH=""
+          if curl -f -s --max-time 10 http://$PUBLIC_IP:9001/health > /dev/null; then
+            API_HEALTH="healthy"
+            echo "✅ API is healthy"
+          else
+            API_HEALTH="unhealthy"
+            echo "❌ API is not responding"
+          fi
+
+          # Check UI health
+          UI_HEALTH=""
+          if curl -f -s --max-time 10 -I http://$PUBLIC_IP:3000 > /dev/null; then
+            UI_HEALTH="healthy"
+            echo "✅ UI is healthy"
+          else
+            UI_HEALTH="unhealthy"
+            echo "❌ UI is not responding"
+          fi
+
+          echo "api_health=$API_HEALTH" >> $GITHUB_OUTPUT
+          echo "ui_health=$UI_HEALTH" >> $GITHUB_OUTPUT
+
+          # Overall health status
+          if [ "$API_HEALTH" = "healthy" ] && [ "$UI_HEALTH" = "healthy" ]; then
+            echo "overall_health=healthy" >> $GITHUB_OUTPUT
+            echo "✅ Overall health: HEALTHY"
+          else
+            echo "overall_health=unhealthy" >> $GITHUB_OUTPUT
+            echo "❌ Overall health: UNHEALTHY"
+          fi
+
+      - name: Check instance status
+        id: instance_status
+        run: |
+          echo "🖥️ Checking instance status..."
+
+          INSTANCE_ID="${{ steps.find_instances.outputs.instance_id }}"
+
+          # Get detailed instance information
+          INSTANCE_INFO=$(aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --instance-ids $INSTANCE_ID \
+            --query 'Reservations[0].Instances[0].[State.Name,LaunchTime,PublicIpAddress,InstanceType]' \
+            --output text)
+
+          STATE=$(echo "$INSTANCE_INFO" | awk '{print $1}')
+          LAUNCH_TIME=$(echo "$INSTANCE_INFO" | awk '{print $2}')
+          PUBLIC_IP=$(echo "$INSTANCE_INFO" | awk '{print $3}')
+          INSTANCE_TYPE=$(echo "$INSTANCE_INFO" | awk '{print $4}')
+
+          echo "state=$STATE" >> $GITHUB_OUTPUT
+          echo "launch_time=$LAUNCH_TIME" >> $GITHUB_OUTPUT
+          echo "instance_type=$INSTANCE_TYPE" >> $GITHUB_OUTPUT
+
+          # Calculate uptime
+          LAUNCH_TIMESTAMP=$(date -d "$LAUNCH_TIME" +%s)
+          CURRENT_TIMESTAMP=$(date +%s)
+          UPTIME_MINUTES=$(( (CURRENT_TIMESTAMP - LAUNCH_TIMESTAMP) / 60 ))
+
+          echo "uptime_minutes=$UPTIME_MINUTES" >> $GITHUB_OUTPUT
+          echo "Instance uptime: $UPTIME_MINUTES minutes"
+
+      - name: Check costs
+        if: github.event.inputs.check_costs != 'false'
+        id: cost_check
+        run: |
+          echo "💰 Checking AWS costs..."
+
+          # Get current month's costs for demo resources
+          CURRENT_MONTH=$(date +%Y-%m)
+
+          # This is a simplified cost check - in production you'd use Cost Explorer API
+          echo "📊 Cost monitoring for $CURRENT_MONTH"
+          echo "Note: Detailed cost analysis requires Cost Explorer API access"
+          echo "Estimated monthly cost for t2.large: ~$40-55"
+
+          # Check for any cost anomalies (simplified)
+          INSTANCE_COUNT="${{ steps.find_instances.outputs.instances_found == 'true' && '1' || '0' }}"
+          echo "instance_count=$INSTANCE_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Generate monitoring report
+        id: report
+        run: |
+          echo "📊 Generating monitoring report..."
+
+          INSTANCE_ID="${{ steps.find_instances.outputs.instance_id }}"
+          PUBLIC_IP="${{ steps.find_instances.outputs.public_ip }}"
+          API_HEALTH="${{ steps.health_check.outputs.api_health }}"
+          UI_HEALTH="${{ steps.health_check.outputs.ui_health }}"
+          OVERALL_HEALTH="${{ steps.health_check.outputs.overall_health }}"
+          STATE="${{ steps.instance_status.outputs.state }}"
+          UPTIME_MINUTES="${{ steps.instance_status.outputs.uptime_minutes }}"
+          INSTANCE_TYPE="${{ steps.instance_status.outputs.instance_type }}"
+
+          # Determine status emoji
+          if [ "$OVERALL_HEALTH" = "healthy" ]; then
+            STATUS_EMOJI="✅"
+            STATUS_TEXT="HEALTHY"
+          else
+            STATUS_EMOJI="❌"
+            STATUS_TEXT="UNHEALTHY"
+          fi
+
+          cat << EOF > monitoring-report.md
+          # SiriusScan Demo Monitoring Report
+
+          **Report Time**: $(date -u)
+          **Trigger**: ${{ github.event_name }}
+
+          ## Instance Status
+          - **Instance ID**: \`$INSTANCE_ID\`
+          - **Public IP**: \`$PUBLIC_IP\`
+          - **Instance Type**: \`$INSTANCE_TYPE\`
+          - **State**: \`$STATE\`
+          - **Uptime**: $UPTIME_MINUTES minutes
+
+          ## Health Status
+          - **Overall Status**: $STATUS_EMOJI $STATUS_TEXT
+          - **API Health**: $API_HEALTH
+          - **UI Health**: $UI_HEALTH
+
+          ## Access URLs
+          - **UI**: http://$PUBLIC_IP:3000
+          - **API**: http://$PUBLIC_IP:9001
+          - **Health Check**: http://$PUBLIC_IP:9001/health
+
+          ## Recommendations
+          EOF
+
+          if [ "$OVERALL_HEALTH" = "unhealthy" ]; then
+            cat << EOF >> monitoring-report.md
+          - ⚠️ **Action Required**: Demo environment is unhealthy
+          - Check service logs for errors
+          - Consider restarting services or redeploying
+          - Verify all dependencies are running
+          EOF
+          else
+            cat << EOF >> monitoring-report.md
+          - ✅ **Status**: Demo environment is running normally
+          - No immediate action required
+          - Continue monitoring for any changes
+          EOF
+          fi
+
+          cat << EOF >> monitoring-report.md
+
+          ---
+          *This monitoring report was generated automatically by GitHub Actions*
+          EOF
+
+      - name: Upload monitoring report
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-report
+          path: monitoring-report.md
+
+      - name: Create issue if unhealthy
+        if: steps.health_check.outputs.overall_health == 'unhealthy'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('monitoring-report.md', 'utf8');
+
+            // Check if there's already an open issue for this problem
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'demo-health'
+            });
+
+            if (issues.data.length === 0) {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🚨 Demo Environment Health Alert',
+                body: report + '\n\n**This issue was created automatically due to health check failures.**',
+                labels: ['demo-health', 'automated']
+              });
+            } else {
+              // Update existing issue
+              const issue = issues.data[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '**Updated Health Status:**\n\n' + report
+              });
+            }
+
+      - name: Monitoring success notification
+        if: success()
+        run: |
+          echo "✅ Monitoring completed successfully!"
+          echo "Overall health: ${{ steps.health_check.outputs.overall_health }}"
+          echo "Instance uptime: ${{ steps.instance_status.outputs.uptime_minutes }} minutes"
+
+      - name: Monitoring failure notification
+        if: failure()
+        run: |
+          echo "❌ Monitoring failed!"
+          echo "Check the logs above for details."

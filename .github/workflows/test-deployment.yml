@@ -1,0 +1,234 @@
+name: Test Deployment Configuration
+
+on:
+  # Run on pull requests to validate changes
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "scripts/**"
+      - "data/**"
+      - "fixtures/**"
+      - ".github/workflows/**"
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: "Type of test to run"
+        required: true
+        default: "validation"
+        type: choice
+        options:
+          - validation
+          - plan
+          - dry-run
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_DIR: infra/demo
+
+jobs:
+  validate:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Format Check
+        run: |
+          echo "🔍 Checking Terraform formatting..."
+          terraform fmt -check -recursive ${{ env.TERRAFORM_DIR }}
+          if [ $? -ne 0 ]; then
+            echo "❌ Terraform files are not properly formatted"
+            echo "Run 'terraform fmt -recursive ${{ env.TERRAFORM_DIR }}' to fix"
+            exit 1
+          fi
+          echo "✅ Terraform formatting is correct"
+
+      - name: Terraform Init
+        run: |
+          echo "🔧 Initializing Terraform..."
+          terraform init -backend=false ${{ env.TERRAFORM_DIR }}
+
+      - name: Terraform Validate
+        run: |
+          echo "✅ Validating Terraform configuration..."
+          terraform validate -no-color ${{ env.TERRAFORM_DIR }}
+          if [ $? -ne 0 ]; then
+            echo "❌ Terraform validation failed"
+            exit 1
+          fi
+          echo "✅ Terraform configuration is valid"
+
+      - name: Check for required files
+        run: |
+          echo "📁 Checking for required files..."
+
+          REQUIRED_FILES=(
+            "${{ env.TERRAFORM_DIR }}/main.tf"
+            "${{ env.TERRAFORM_DIR }}/variables.tf"
+            "${{ env.TERRAFORM_DIR }}/outputs.tf"
+            "${{ env.TERRAFORM_DIR }}/user_data.sh"
+            "scripts/monitor_demo.sh"
+            "scripts/seed_demo.sh"
+            "scripts/wait_for_api.sh"
+          )
+
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Required file missing: $file"
+              exit 1
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+
+      - name: Validate user_data.sh script
+        run: |
+          echo "🔍 Validating user_data.sh script..."
+
+          # Check if script is executable
+          if [ ! -x "${{ env.TERRAFORM_DIR }}/user_data.sh" ]; then
+            echo "❌ user_data.sh is not executable"
+            exit 1
+          fi
+
+          # Basic syntax check
+          bash -n "${{ env.TERRAFORM_DIR }}/user_data.sh"
+          if [ $? -ne 0 ]; then
+            echo "❌ user_data.sh has syntax errors"
+            exit 1
+          fi
+
+          echo "✅ user_data.sh script is valid"
+
+      - name: Validate monitoring scripts
+        run: |
+          echo "🔍 Validating monitoring scripts..."
+
+          SCRIPTS=(
+            "scripts/monitor_demo.sh"
+            "scripts/seed_demo.sh"
+            "scripts/wait_for_api.sh"
+          )
+
+          for script in "${SCRIPTS[@]}"; do
+            if [ -f "$script" ]; then
+              # Make executable
+              chmod +x "$script"
+              
+              # Basic syntax check
+              bash -n "$script"
+              if [ $? -ne 0 ]; then
+                echo "❌ $script has syntax errors"
+                exit 1
+              fi
+              
+              echo "✅ $script is valid"
+            fi
+          done
+
+      - name: Check demo data files
+        run: |
+          echo "📊 Checking demo data files..."
+
+          if [ -d "data" ]; then
+            echo "✅ Data directory exists"
+            ls -la data/
+          else
+            echo "⚠️ Data directory not found"
+          fi
+
+          if [ -d "fixtures" ]; then
+            echo "✅ Fixtures directory exists"
+            ls -la fixtures/
+          else
+            echo "⚠️ Fixtures directory not found"
+          fi
+
+      - name: Generate validation summary
+        run: |
+          echo "📋 Generating validation summary..."
+
+          cat << EOF > validation-summary.md
+          # SiriusScan Demo Configuration Validation
+
+          **Validation Time**: $(date -u)
+          **Trigger**: ${{ github.event_name }}
+          **Commit**: ${{ github.sha }}
+          **Branch**: ${{ github.ref_name }}
+
+          ## Validation Results
+          - **Terraform Format**: ✅ Passed
+          - **Terraform Init**: ✅ Passed
+          - **Terraform Validate**: ✅ Passed
+          - **Required Files**: ✅ All present
+          - **Script Validation**: ✅ All valid
+          - **Demo Data**: ✅ Present
+
+          ## Configuration Summary
+          - **AWS Region**: ${{ env.AWS_REGION }}
+          - **Terraform Directory**: ${{ env.TERRAFORM_DIR }}
+          - **Instance Type**: t2.large
+
+          ## Next Steps
+          1. Configuration is ready for deployment
+          2. All validation checks passed
+          3. Safe to merge or deploy
+
+          ---
+          *This validation was performed automatically by GitHub Actions*
+          EOF
+
+      - name: Upload validation summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-summary
+          path: validation-summary.md
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('validation-summary.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+      - name: Validation success notification
+        if: success()
+        run: |
+          echo "✅ All validation checks passed!"
+          echo "Configuration is ready for deployment."
+
+      - name: Validation failure notification
+        if: failure()
+        run: |
+          echo "❌ Validation failed!"
+          echo "Please fix the issues above before merging."

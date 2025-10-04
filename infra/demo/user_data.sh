@@ -58,6 +58,12 @@ echo "📁 Creating application directory..."
 mkdir -p /opt/sirius
 cd /opt/sirius
 
+# Pre-clone go-api dependency for API build
+echo "📥 Pre-cloning go-api dependency..."
+cd /opt
+git clone https://github.com/SiriusScan/go-api.git
+cd /opt/sirius
+
 # Clone SiriusScan repository
 echo "📥 Cloning SiriusScan repository..."
 echo "Repository: ${sirius_repo_url}"
@@ -65,6 +71,10 @@ echo "Branch: ${demo_branch}"
 
 git clone --branch ${demo_branch} ${sirius_repo_url} repo
 cd repo
+
+# Create symlink to go-api for API build
+echo "🔗 Creating symlink to go-api..."
+ln -sf /opt/go-api ../go-api
 
 # Create .env file for demo mode
 echo "⚙️  Configuring demo environment..."
@@ -79,15 +89,19 @@ POSTGRES_PASSWORD=demo_password_change_in_production
 POSTGRES_DB=sirius
 POSTGRES_HOST=sirius-postgres
 POSTGRES_PORT=5432
+DATABASE_URL=postgresql://postgres:demo_password_change_in_production@sirius-postgres:5432/sirius
 
 # API
 API_PORT=9001
 GO_ENV=production
+SIRIUS_API_URL=http://sirius-api:9001
+NEXT_PUBLIC_SIRIUS_API_URL=http://localhost:9001
 
 # UI
 NODE_ENV=production
 NEXTAUTH_SECRET=demo_secret_change_in_production
 NEXTAUTH_URL=http://localhost:3000
+SKIP_ENV_VALIDATION=1
 
 # Redis/Valkey
 VALKEY_HOST=sirius-valkey
@@ -99,6 +113,11 @@ RABBITMQ_URL=amqp://guest:guest@sirius-rabbitmq:5672/
 # Engine
 ENGINE_MAIN_PORT=5174
 GRPC_AGENT_PORT=50051
+SIRIUS_API_URL=http://sirius-api:9001
+API_BASE_URL=http://sirius-api:9001
+AGENT_ID=sirius-engine
+HOST_ID=sirius-engine
+ENABLE_SCRIPTING=true
 
 # Logging
 LOG_LEVEL=info
@@ -112,15 +131,44 @@ docker compose pull || echo "⚠️  Some images may need to build"
 
 # Start Docker Compose stack
 echo "🚀 Starting SiriusScan services..."
-docker compose up -d
+echo "Building and starting services (this may take 5-10 minutes)..."
+docker compose up -d --build
 
-# Wait for containers to start
-echo "⏳ Waiting for containers to initialize..."
-sleep 10
+# Wait for services to be ready with health checks
+echo "⏳ Waiting for services to initialize..."
+echo "This may take 5-10 minutes for first-time setup..."
+
+# Wait for database to be ready
+echo "Waiting for PostgreSQL..."
+timeout 120 bash -c 'until docker compose exec sirius-postgres pg_isready -U postgres; do sleep 3; done' || echo "PostgreSQL timeout"
+
+# Wait for RabbitMQ to be ready
+echo "Waiting for RabbitMQ..."
+timeout 120 bash -c 'until docker compose exec sirius-rabbitmq rabbitmqctl status; do sleep 3; done' || echo "RabbitMQ timeout"
+
+# Check API build status
+echo "Checking API service build status..."
+docker compose logs sirius-api | tail -20
+
+# Wait for API to be ready
+echo "Waiting for API service..."
+timeout 180 bash -c 'until curl -f http://localhost:9001/api/v1/health; do sleep 5; done' || echo "API timeout - checking logs..."
+
+# If API failed, show logs
+if ! curl -f http://localhost:9001/api/v1/health 2>/dev/null; then
+    echo "❌ API service failed to start. Checking logs..."
+    docker compose logs sirius-api | tail -50
+    echo "Checking all service status..."
+    docker compose ps
+fi
 
 # Show running containers
 echo "📊 Running containers:"
 docker compose ps
+
+# Show service health status
+echo "🔍 Service health status:"
+docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 
 # Create log directory for seeding
 mkdir -p /var/log/sirius

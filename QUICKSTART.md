@@ -28,6 +28,7 @@ cd ../..
 ```
 
 **Access Demo** (after ~15 minutes):
+
 - **UI**: http://[public-ip]:3000
 - **API**: http://[public-ip]:9001/health
 
@@ -47,6 +48,7 @@ terraform destroy -auto-approve
 ## 📋 Current Configuration
 
 ### AWS Resources
+
 - **Instance**: t2.small (1 vCPU, 2GB RAM)
 - **Region**: us-east-1
 - **Cost**: ~$17/month if left running
@@ -54,7 +56,8 @@ terraform destroy -auto-approve
 - **Subnet**: subnet-d10d7def
 
 ### SiriusScan Configuration
-- **Repository**: https://github.com/SiriusScan/Sirius.git  
+
+- **Repository**: https://github.com/SiriusScan/Sirius.git
 - **Branch**: main (temporarily, until `demo` branch exists)
 - **Services**: UI, API, Engine, PostgreSQL, RabbitMQ, Valkey
 
@@ -63,7 +66,9 @@ terraform destroy -auto-approve
 ## ⏭️ What's Next
 
 ### Before Production Deployment
+
 1. **Create demo branch** in main Sirius repository
+
    ```bash
    cd /path/to/Sirius
    git checkout -b demo
@@ -71,6 +76,7 @@ terraform destroy -auto-approve
    ```
 
 2. **Update terraform.tfvars** to use demo branch
+
    ```bash
    demo_branch = "demo"
    ```
@@ -82,12 +88,15 @@ terraform destroy -auto-approve
    - Add demo banner
 
 ### For Automated Rebuilds
+
 4. **Add GitHub secrets**:
+
    - `AWS_ACCESS_KEY_ID`
    - `AWS_SECRET_ACCESS_KEY`
    - `AWS_REGION`
 
 5. **Create GitHub Actions workflow** (Phase 4)
+
    - See `tasks/tasks.json` Phase 4 for details
 
 6. **Create demo data fixtures** (Phase 3)
@@ -134,6 +143,7 @@ aws ec2 describe-subnets --subnet-ids subnet-d10d7def
 ### Demo branch doesn't exist
 
 Update `infra/demo/terraform.tfvars`:
+
 ```
 demo_branch = "main"  # Use main until demo branch is created
 ```
@@ -151,4 +161,3 @@ demo_branch = "main"  # Use main until demo branch is created
 ---
 
 **Ready to deploy?** Run `terraform apply` from `infra/demo/` directory! 🚀
-

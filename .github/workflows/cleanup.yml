@@ -1,0 +1,244 @@
+name: Cleanup Demo Resources
+
+on:
+  # Run cleanup every 6 hours to catch any orphaned resources
+  schedule:
+    - cron: "0 */6 * * *"
+
+  # Manual cleanup trigger
+  workflow_dispatch:
+    inputs:
+      force_cleanup:
+        description: "Force cleanup even if resources are recent"
+        required: false
+        default: "false"
+        type: boolean
+      cleanup_all:
+        description: "Cleanup all demo resources (including current)"
+        required: false
+        default: "false"
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_DIR: infra/demo
+
+jobs:
+  cleanup:
+    name: Cleanup Demo Resources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: List existing instances
+        id: list_instances
+        run: |
+          echo "🔍 Listing existing demo instances..."
+
+          # List all instances with demo tags
+          aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=SiriusDemo" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].[InstanceId,LaunchTime,PublicIpAddress,Tags[?Key==`Name`].Value|[0]]' \
+            --output table
+
+          # Count running instances
+          RUNNING_COUNT=$(aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=SiriusDemo" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].InstanceId' \
+            --output text | wc -w)
+
+          echo "running_count=$RUNNING_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Check if cleanup is needed
+        id: check_cleanup
+        run: |
+          RUNNING_COUNT="${{ steps.list_instances.outputs.running_count }}"
+          FORCE_CLEANUP="${{ github.event.inputs.force_cleanup }}"
+          CLEANUP_ALL="${{ github.event.inputs.cleanup_all }}"
+
+          if [ "$CLEANUP_ALL" = "true" ]; then
+            echo "cleanup_needed=true" >> $GITHUB_OUTPUT
+            echo "reason=Manual cleanup all requested" >> $GITHUB_OUTPUT
+          elif [ "$RUNNING_COUNT" -gt 1 ]; then
+            echo "cleanup_needed=true" >> $GITHUB_OUTPUT
+            echo "reason=Multiple instances running ($RUNNING_COUNT)" >> $GITHUB_OUTPUT
+          elif [ "$FORCE_CLEANUP" = "true" ]; then
+            echo "cleanup_needed=true" >> $GITHUB_OUTPUT
+            echo "reason=Force cleanup requested" >> $GITHUB_OUTPUT
+          else
+            echo "cleanup_needed=false" >> $GITHUB_OUTPUT
+            echo "reason=Only one instance running, no cleanup needed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip cleanup
+        if: steps.check_cleanup.outputs.cleanup_needed == 'false'
+        run: |
+          echo "✅ ${{ steps.check_cleanup.outputs.reason }}"
+          echo "No cleanup needed at this time."
+
+      - name: Cleanup old instances
+        if: steps.check_cleanup.outputs.cleanup_needed == 'true'
+        run: |
+          echo "🧹 Starting cleanup process..."
+          echo "Reason: ${{ steps.check_cleanup.outputs.reason }}"
+
+          # Get all running demo instances
+          INSTANCES=$(aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=SiriusDemo" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].InstanceId' \
+            --output text)
+
+          if [ -n "$INSTANCES" ]; then
+            echo "Found instances: $INSTANCES"
+            
+            # If cleanup_all is true, terminate all instances
+            if [ "${{ github.event.inputs.cleanup_all }}" = "true" ]; then
+              echo "🗑️ Terminating all demo instances..."
+              aws ec2 terminate-instances --region ${{ env.AWS_REGION }} --instance-ids $INSTANCES
+            else
+              # Otherwise, keep the most recent instance and terminate others
+              echo "🗑️ Terminating old demo instances (keeping most recent)..."
+              
+              # Get instances sorted by launch time (newest first)
+              OLD_INSTANCES=$(aws ec2 describe-instances \
+                --region ${{ env.AWS_REGION }} \
+                --filters "Name=tag:Project,Values=SiriusDemo" "Name=instance-state-name,Values=running" \
+                --query 'Reservations[*].Instances[*].[InstanceId,LaunchTime]' \
+                --output text | sort -k2 -r | tail -n +2 | cut -f1)
+              
+              if [ -n "$OLD_INSTANCES" ]; then
+                echo "Terminating old instances: $OLD_INSTANCES"
+                aws ec2 terminate-instances --region ${{ env.AWS_REGION }} --instance-ids $OLD_INSTANCES
+              else
+                echo "No old instances to terminate"
+              fi
+            fi
+          else
+            echo "No running instances found"
+          fi
+
+      - name: Cleanup orphaned security groups
+        run: |
+          echo "🧹 Cleaning up orphaned security groups..."
+
+          # Find security groups with demo tags that are not attached to any instances
+          SG_IDS=$(aws ec2 describe-security-groups \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=SiriusDemo" \
+            --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
+            --output text)
+
+          for sg_id in $SG_IDS; do
+            # Check if security group is attached to any instances
+            ATTACHED=$(aws ec2 describe-instances \
+              --region ${{ env.AWS_REGION }} \
+              --filters "Name=instance.group-id,Values=$sg_id" \
+              --query 'Reservations[*].Instances[*].InstanceId' \
+              --output text)
+            
+            if [ -z "$ATTACHED" ]; then
+              echo "Deleting orphaned security group: $sg_id"
+              aws ec2 delete-security-group --region ${{ env.AWS_REGION }} --group-id $sg_id || echo "Failed to delete $sg_id"
+            else
+              echo "Security group $sg_id is still in use, keeping it"
+            fi
+          done
+
+      - name: Cleanup orphaned IAM resources
+        run: |
+          echo "🧹 Cleaning up orphaned IAM resources..."
+
+          # List instance profiles
+          PROFILES=$(aws iam list-instance-profiles \
+            --query 'InstanceProfiles[?contains(InstanceProfileName, `sirius-demo`)].InstanceProfileName' \
+            --output text)
+
+          for profile in $PROFILES; do
+            # Check if profile is attached to any instances
+            ATTACHED=$(aws ec2 describe-instances \
+              --region ${{ env.AWS_REGION }} \
+              --filters "Name=iam-instance-profile.name,Values=$profile" \
+              --query 'Reservations[*].Instances[*].InstanceId' \
+              --output text)
+            
+            if [ -z "$ATTACHED" ]; then
+              echo "Deleting orphaned instance profile: $profile"
+              aws iam delete-instance-profile --instance-profile-name $profile || echo "Failed to delete $profile"
+            else
+              echo "Instance profile $profile is still in use, keeping it"
+            fi
+          done
+
+      - name: Generate cleanup summary
+        run: |
+          echo "📊 Generating cleanup summary..."
+
+          # Count remaining resources
+          REMAINING_INSTANCES=$(aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=SiriusDemo" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].InstanceId' \
+            --output text | wc -w)
+
+          cat << EOF > cleanup-summary.md
+          # SiriusScan Demo Cleanup Summary
+
+          **Cleanup Time**: $(date -u)
+          **Trigger**: ${{ github.event_name }}
+
+          ## Cleanup Results
+          - **Reason**: ${{ steps.check_cleanup.outputs.reason }}
+          - **Remaining Instances**: $REMAINING_INSTANCES
+
+          ## Cost Impact
+          - **Estimated Monthly Savings**: ~$40-55 per terminated instance
+          - **Current Running Instances**: $REMAINING_INSTANCES
+
+          ## Next Steps
+          1. Monitor remaining instances for proper operation
+          2. Verify no critical resources were accidentally removed
+          3. Check AWS billing for cost reduction
+
+          ---
+          *This cleanup was performed automatically by GitHub Actions*
+          EOF
+
+      - name: Upload cleanup summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleanup-summary
+          path: cleanup-summary.md
+
+      - name: Cleanup success notification
+        if: success()
+        run: |
+          echo "✅ Cleanup completed successfully!"
+          echo "Remaining instances: ${{ steps.list_instances.outputs.running_count }}"
+
+      - name: Cleanup failure notification
+        if: failure()
+        run: |
+          echo "❌ Cleanup failed!"
+          echo "Check the logs above for details."
