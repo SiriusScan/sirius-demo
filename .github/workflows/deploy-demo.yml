@@ -119,13 +119,21 @@ jobs:
         id: destroy
         run: |
           echo "🗑️ Destroying existing demo infrastructure..."
-          terraform -chdir=${{ env.TERRAFORM_DIR }} init
-          terraform -chdir=${{ env.TERRAFORM_DIR }} destroy \
-            -var="vpc_id=vpc-416eeb39" \
-            -var="subnet_id=subnet-d31ffe8e" \
-            -var="aws_region=us-west-2" \
-            -var="instance_type=${{ env.DEMO_INSTANCE_TYPE }}" \
-            -auto-approve || true
+          # Clean up existing resources manually to avoid conflicts
+          echo "Cleaning up existing security groups..."
+          aws ec2 delete-security-group --group-name sirius-demo-sg --region us-west-2 2>/dev/null || true
+          
+          echo "Cleaning up existing IAM resources..."
+          aws iam detach-role-policy --role-name sirius-demo-instance-role --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy 2>/dev/null || true
+          aws iam detach-role-policy --role-name sirius-demo-instance-role --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore 2>/dev/null || true
+          aws iam delete-role --role-name sirius-demo-instance-role 2>/dev/null || true
+          aws iam delete-instance-profile --instance-profile-name sirius-demo-instance-profile 2>/dev/null || true
+          
+          echo "Cleaning up existing EC2 instances..."
+          aws ec2 terminate-instances --instance-ids $(aws ec2 describe-instances --region us-west-2 --filters "Name=tag:Name,Values=sirius-demo" "Name=instance-state-name,Values=running,pending" --query 'Reservations[*].Instances[*].InstanceId' --output text) 2>/dev/null || true
+          
+          echo "Waiting for cleanup to complete..."
+          sleep 30
         continue-on-error: true
 
       - name: Wait for cleanup
