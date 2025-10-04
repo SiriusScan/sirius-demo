@@ -114,9 +114,8 @@ jobs:
         id: destroy
         run: |
           echo "🗑️ Destroying existing demo infrastructure..."
-          cd ${{ env.TERRAFORM_DIR }}
-          terraform init
-          terraform destroy -auto-approve || true
+          terraform -chdir=${{ env.TERRAFORM_DIR }} init
+          terraform -chdir=${{ env.TERRAFORM_DIR }} destroy -var-file="terraform.tfvars" -auto-approve || true
         continue-on-error: true
 
       - name: Wait for cleanup
