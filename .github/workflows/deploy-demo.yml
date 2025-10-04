@@ -88,7 +88,7 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          terraform -chdir=${{ env.TERRAFORM_DIR }} plan -no-color -out=tfplan
+          terraform -chdir=${{ env.TERRAFORM_DIR }} plan -var-file="terraform.tfvars" -no-color -out=tfplan
         continue-on-error: true
 
       - name: Check for changes
@@ -129,7 +129,7 @@ jobs:
         run: |
           echo "🚀 Deploying new demo infrastructure..."
           terraform -chdir=${{ env.TERRAFORM_DIR }} init
-          terraform -chdir=${{ env.TERRAFORM_DIR }} apply -auto-approve
+          terraform -chdir=${{ env.TERRAFORM_DIR }} apply -var-file="terraform.tfvars" -auto-approve
 
           # Get instance details
           INSTANCE_ID=$(terraform -chdir=${{ env.TERRAFORM_DIR }} output -raw instance_id)
