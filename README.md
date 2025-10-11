@@ -241,8 +241,8 @@ nslookup sirius.opensecurity.com
 #### SSH Access (Recommended for Troubleshooting)
 
 ```bash
-# If SSH is configured with key pair
-ssh -i ~/.ssh/sirius-demo-key.pem ubuntu@<instance-ip>
+# If SSH is configured with public key
+ssh ubuntu@<instance-ip>
 
 # Check service logs
 docker compose logs sirius-api
@@ -263,11 +263,8 @@ docker compose logs sirius-ui
 #### Setting Up SSH Access
 
 ```bash
-# Run the SSH setup script
-./scripts/setup-ssh-access.sh
-
-# Update terraform.tfvars
-key_pair_name = "sirius-demo-key"
+# Update terraform.tfvars with your public key
+public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrV4Rtby+n9V5Ku90icvg2lLAILwwxa1qgf4FyQogrfiA8gzMAd73iHObiEWNniLUmBnGBe1kqu6xEr5+L9D1eCa7HsUZdYDWAwKclxB0ay39URgKHBbbySeSta1VAUS8tJ3mVGikbZPi2CxhGlM7Z2L3rQnLtYJyrA5Bd11FyCTKVaxzxdyB63vznjbwxE490FRWtDUuSU+Kn81qIwG+kYvqzF8KyCX33eRcfXVt7uyLCYaR7Nrws8NpuK2cfC+iRhuqIzT7PNNaDnv2UURCIAGju8YMUAU8N1yN/nEcqUjwX1TdGPzd0d0MqZ2oT9+HEeTG8O/3/1pshpRl2Ips9"
 
 # Apply changes
 terraform apply

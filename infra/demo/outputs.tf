@@ -39,7 +39,7 @@ output "instance_connect_command" {
 }
 
 output "ssh_connect_command" {
-  description = "SSH command to connect to instance (if key_pair_name is configured)"
-  value       = var.key_pair_name != "" ? "ssh -i ~/.ssh/${var.key_pair_name}.pem ubuntu@${aws_eip.demo.public_ip}" : "SSH not configured - use SSM Session Manager instead"
+  description = "SSH command to connect to instance (if public_key is configured)"
+  value       = var.public_key != "" ? "ssh ubuntu@${aws_eip.demo.public_ip}" : "SSH not configured - use SSM Session Manager instead"
 }
 

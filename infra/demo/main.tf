@@ -42,6 +42,17 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+# SSH Key Pair (conditional on public_key being provided)
+resource "aws_key_pair" "demo" {
+  count      = var.public_key != "" ? 1 : 0
+  key_name   = "sirius-demo-key"
+  public_key = var.public_key
+
+  tags = {
+    Name = "sirius-demo-key"
+  }
+}
+
 # Security Group for demo instance
 resource "aws_security_group" "demo" {
   name_prefix = "sirius-demo-sg-"
@@ -83,9 +94,9 @@ resource "aws_security_group" "demo" {
     cidr_blocks = var.allowed_cidrs
   }
 
-  # SSH access (conditional on key_pair_name being set)
+  # SSH access (conditional on public_key being provided)
   dynamic "ingress" {
-    for_each = var.key_pair_name != "" ? [1] : []
+    for_each = var.public_key != "" ? [1] : []
     content {
       description = "SSH Access"
       from_port   = 22
@@ -176,7 +187,7 @@ resource "aws_instance" "demo" {
   iam_instance_profile   = aws_iam_instance_profile.demo.name
   
   # SSH key pair (conditional)
-  key_name = var.key_pair_name != "" ? var.key_pair_name : null
+  key_name = var.public_key != "" ? aws_key_pair.demo[0].key_name : null
 
   root_block_device {
     volume_type           = "gp3"

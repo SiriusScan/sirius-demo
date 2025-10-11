@@ -44,8 +44,8 @@ variable "demo_branch" {
   default     = "demo"
 }
 
-variable "key_pair_name" {
-  description = "Name of the AWS key pair to use for SSH access (optional, leave empty to disable SSH)"
+variable "public_key" {
+  description = "Public SSH key for demo instance access (leave empty to disable SSH)"
   type        = string
   default     = ""
 }
