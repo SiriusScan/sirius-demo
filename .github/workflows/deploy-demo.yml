@@ -19,6 +19,10 @@ on:
         default: "false"
         type: boolean
 
+  # Trigger from main Sirius repository when sirius-demo branch is updated
+  repository_dispatch:
+    types: [sirius-demo-updated]
+
   # Trigger on changes to infrastructure or demo code
   push:
     branches: [main]
@@ -119,11 +123,11 @@ jobs:
         id: destroy
         run: |
           echo "🗑️ Destroying existing demo infrastructure..."
-          
+
           # Use comprehensive cleanup script
           chmod +x scripts/cleanup-aws-resources.sh
           ./scripts/cleanup-aws-resources.sh
-          
+
           echo "✅ Cleanup completed!"
         continue-on-error: true
 
@@ -195,13 +199,13 @@ jobs:
         if: steps.health.outcome == 'success'
         run: |
           echo "🌐 Updating DNS record for sirius.opensecurity.com..."
-          PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
+          ELASTIC_IP="${{ steps.deploy.outputs.elastic_ip }}"
           DOMAIN="opensecurity.com"
           SUBDOMAIN="sirius"
 
           # Run DNS update script
           chmod +x scripts/update-dns.sh
-          ./scripts/update-dns.sh $PUBLIC_IP $DOMAIN $SUBDOMAIN || echo "⚠️ DNS update failed, but deployment continues"
+          ./scripts/update-dns.sh $ELASTIC_IP $DOMAIN $SUBDOMAIN || echo "⚠️ DNS update failed, but deployment continues"
 
       - name: Seed demo data
         if: github.event.inputs.skip_seeding != 'true' && steps.health.outcome == 'success'
@@ -243,9 +247,10 @@ jobs:
           - **API**: http://$PUBLIC_IP:9001
           - **Health Check**: http://$PUBLIC_IP:9001/health
 
-          ## Domain Access
-          - **UI**: http://sirius.opensecurity.com:3000
-          - **API**: http://sirius.opensecurity.com:9001
+        ## Domain Access (Static IP)
+        - **UI**: http://sirius.opensecurity.com:3000
+        - **API**: http://sirius.opensecurity.com:9001
+        - **Elastic IP**: ${{ steps.deploy.outputs.elastic_ip }}
 
           ## SSM Access
           \`\`\`bash
