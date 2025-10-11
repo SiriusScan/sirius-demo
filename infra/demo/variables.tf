@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region for demo deployment"
   type        = string
-  default     = "us-east-1"
+  default     = "us-west-2"
 }
 
 variable "instance_type" {
@@ -39,7 +39,7 @@ variable "sirius_repo_url" {
 }
 
 variable "demo_branch" {
-  description = "Branch to checkout for demo"
+  description = "Branch to checkout from Sirius repository for demo deployment"
   type        = string
   default     = "demo"
 }

@@ -23,7 +23,7 @@ public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrV4Rtby+n9V5Ku90icvg2lLAILw
 
 # Repository Configuration
 sirius_repo_url = "https://github.com/YourOrg/Sirius.git"
-demo_branch     = "demo"
+demo_branch     = "demo"  # Use the 'demo' branch from Sirius repository
 
 # Resource Tags
 common_tags = {

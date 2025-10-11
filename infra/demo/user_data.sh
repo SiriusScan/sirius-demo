@@ -152,10 +152,10 @@ docker compose logs sirius-api | tail -20
 
 # Wait for API to be ready
 echo "Waiting for API service..."
-timeout 180 bash -c 'until curl -f http://localhost:9001/api/v1/health; do sleep 5; done' || echo "API timeout - checking logs..."
+timeout 180 bash -c 'until curl -f http://localhost:9001/health; do sleep 5; done' || echo "API timeout - checking logs..."
 
 # If API failed, show logs
-if ! curl -f http://localhost:9001/api/v1/health 2>/dev/null; then
+if ! curl -f http://localhost:9001/health 2>/dev/null; then
     echo "❌ API service failed to start. Checking logs..."
     docker compose logs sirius-api | tail -50
     echo "Checking all service status..."

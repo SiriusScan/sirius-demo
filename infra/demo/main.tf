@@ -12,7 +12,7 @@ terraform {
   # backend "s3" {
   #   bucket         = "sirius-demo-tfstate"
   #   key            = "demo/terraform.tfstate"
-  #   region         = "us-east-1"
+  #   region         = "us-west-2"
   #   encrypt        = true
   #   dynamodb_table = "sirius-demo-tflock"
   # }
