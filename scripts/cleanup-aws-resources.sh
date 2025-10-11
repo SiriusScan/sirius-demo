@@ -71,20 +71,9 @@ else
 fi
 
 # 1.5. Clean up Elastic IPs
-echo "🌐 Cleaning up Elastic IPs..."
-EIP_ALLOCATIONS=$(aws ec2 describe-addresses --region us-west-2 \
-    --filters "Name=tag:Name,Values=sirius-demo-eip*" \
-    --query 'Addresses[*].AllocationId' --output text 2>/dev/null || echo "")
-
-if [ ! -z "$EIP_ALLOCATIONS" ] && [ "$EIP_ALLOCATIONS" != "None" ]; then
-    echo "Found Elastic IPs to release: $EIP_ALLOCATIONS"
-    for allocation_id in $EIP_ALLOCATIONS; do
-        echo "Releasing Elastic IP: $allocation_id"
-        aws ec2 release-address --allocation-id "$allocation_id" --region us-west-2 || true
-    done
-else
-    echo "No Elastic IPs found to release"
-fi
+# NOTE: Elastic IPs are now managed by Terraform and should persist across deployments
+# Terraform will handle EIP lifecycle - DO NOT destroy manually
+echo "🌐 Skipping Elastic IP cleanup (managed by Terraform for persistence)"
 
 # 2. Clean up security groups
 echo "🔒 Cleaning up security groups..."

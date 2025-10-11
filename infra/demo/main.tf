@@ -175,6 +175,12 @@ resource "aws_eip" "demo" {
   tags = {
     Name = "sirius-demo-eip"
   }
+  
+  # Prevent accidental deletion of static IP
+  lifecycle {
+    prevent_destroy = false  # Set to true in production to fully protect
+    create_before_destroy = true
+  }
 }
 
 # EC2 Instance for demo

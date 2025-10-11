@@ -277,14 +277,14 @@ terraform apply
 The demo infrastructure is optimized for cost efficiency while maintaining full functionality:
 
 - **Instance Type**: t3.small (2 vCPU, 2GB RAM) - 77% cost savings vs t2.large
-- **Storage**: 20GB EBS volume - sufficient for demo workloads  
+- **Storage**: 20GB EBS volume - sufficient for demo workloads
 - **Resource Usage**: Current utilization ~800MB RAM, well within 2GB limit
 - **Estimated Monthly Cost**: ~$15-20/month (vs ~$67/month with t2.large)
 
 ### **Resource Costs**
 
 - **EC2 Instance**: ~$0.0208/hour (t3.small) - Cost-optimized
-- **Elastic IP**: $0.00/hour when attached to running instance  
+- **Elastic IP**: $0.00/hour when attached to running instance
 - **EBS Storage**: ~$0.10/GB/month (~$2.00 for 20GB)
 - **Route 53**: ~$0.50/month per hosted zone
 - **Data Transfer**: Minimal for demo usage (~$1-2/month)
@@ -428,13 +428,14 @@ curl -I http://44.224.189.56:3000
 ### **v2.1 - Configuration Fixes & Cost Optimization (October 2025)**
 
 - ✅ **Cost Optimization**: Fixed instance type from t2.large to t3.small (77% cost reduction)
-- ✅ **Configuration Consistency**: Resolved CI/CD vs manual deployment inconsistencies  
+- ✅ **Configuration Consistency**: Resolved CI/CD vs manual deployment inconsistencies
 - ✅ **Health Endpoint Fix**: Standardized API health checks to `/health` endpoint
 - ✅ **Branch Configuration**: Corrected demo branch name throughout all config files
 - ✅ **Region Standardization**: Fixed AWS region defaults to us-west-2
 - ✅ **Investigation Report**: Created comprehensive analysis of issues and fixes
 
 ### **Cost Savings Achieved**
+
 - **Monthly**: $52.56/month saved ($630/year)
 - **Instance**: t3.small (2 vCPU, 2GB RAM) vs t2.large (2 vCPU, 8GB RAM)
 - **Performance**: No degradation - 2GB RAM sufficient for demo workload
