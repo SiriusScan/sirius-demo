@@ -1,0 +1,468 @@
+[
+  {
+    "id": "1",
+    "title": "PHASE 1: Critical Configuration Fixes",
+    "description": "Fix critical configuration inconsistencies causing cost overruns and deployment failures",
+    "details": "This phase addresses the immediate problems: hardcoded instance type in workflow, API health endpoint mismatches, branch name confusion, and region inconsistencies. These fixes will immediately reduce costs by 77% and ensure consistent deployments.",
+    "status": "in_progress",
+    "priority": "high",
+    "dependencies": [],
+    "subtasks": [
+      {
+        "id": "1.1",
+        "title": "Fix instance type in deploy-demo.yml workflow",
+        "description": "Change hardcoded t2.large to t3.small in GitHub Actions workflow",
+        "details": "Update .github/workflows/deploy-demo.yml line 49 from 'DEMO_INSTANCE_TYPE: t2.large' to 'DEMO_INSTANCE_TYPE: t3.small'. This is the root cause of cost overruns. Also verify usage in lines 99, 148, and 242 to ensure consistency. This single change will save $52.56/month ($630/year).",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": [],
+        "testStrategy": "Verify workflow file shows t3.small, grep for t2.large should find no matches in workflow files, check that cost estimates in output match t3.small pricing"
+      },
+      {
+        "id": "1.2",
+        "title": "Identify correct API health endpoint path",
+        "description": "Determine the actual health endpoint used by the Sirius API",
+        "details": "Check the Sirius repository to find the correct API health endpoint. Currently there's confusion between /health and /api/v1/health. The bootstrap script (user_data.sh line 155) uses /api/v1/health while workflows use /health. Need to verify which one is correct by checking the API server code or testing against running instance.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": [],
+        "testStrategy": "Test both endpoints against running instance, check Sirius API codebase for route definitions, verify response format matches expectations"
+      },
+      {
+        "id": "1.3",
+        "title": "Standardize API health endpoint across all files",
+        "description": "Update all health check references to use the correct endpoint",
+        "details": "Once correct endpoint is identified from 1.2, update: 1) infra/demo/user_data.sh line 155, 2) .github/workflows/deploy-demo.yml line 173, 3) .github/workflows/monitor-demo.yml line 101, 4) scripts/wait_for_api.sh line 9. Ensure all files consistently use the same endpoint path.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["1.2"],
+        "testStrategy": "Grep for health endpoint patterns in all files, verify only one endpoint path is used, test that bootstrap script and workflow both successfully validate health"
+      },
+      {
+        "id": "1.4",
+        "title": "Fix branch name in terraform.tfvars",
+        "description": "Correct demo_branch value to match actual Sirius repository branch",
+        "details": "Update infra/demo/terraform.tfvars line 26 from 'demo_branch = \"sirius-demo\"' to 'demo_branch = \"demo\"'. The actual branch in the Sirius repository is 'demo', not 'sirius-demo'. This mismatch causes manual deployments to fail when trying to clone a non-existent branch.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": [],
+        "testStrategy": "Verify Sirius repo has 'demo' branch (git ls-remote), confirm terraform.tfvars has correct branch name, test manual terraform apply successfully clones correct branch"
+      },
+      {
+        "id": "1.5",
+        "title": "Update terraform.tfvars.example with correct branch",
+        "description": "Fix example configuration to prevent future confusion",
+        "details": "Update infra/demo/terraform.tfvars.example line 26 to show 'demo_branch = \"demo\"' instead of just 'demo'. This ensures new setups use the correct branch name from the start.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.4"],
+        "testStrategy": "Verify example file matches actual tfvars structure, confirm branch name is correct"
+      },
+      {
+        "id": "1.6",
+        "title": "Fix default AWS region in variables.tf",
+        "description": "Change default region from us-east-1 to us-west-2",
+        "details": "Update infra/demo/variables.tf line 4 from 'default = \"us-east-1\"' to 'default = \"us-west-2\"'. The actual deployment region is us-west-2 (confirmed by VPC, subnet, workflows, and cleanup scripts), but the Terraform default is us-east-1. This causes confusion and potential deployment to wrong region if defaults are used.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": [],
+        "testStrategy": "Verify variables.tf default matches us-west-2, grep for us-east-1 references and evaluate if they need updating"
+      },
+      {
+        "id": "1.7",
+        "title": "Update commented backend configuration region",
+        "description": "Fix region in commented S3 backend config for future use",
+        "details": "Update infra/demo/main.tf line 15 in the commented backend block from 'region = \"us-east-1\"' to 'region = \"us-west-2\"'. While this is currently commented out, it should have the correct region for when it's enabled.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["1.6"],
+        "testStrategy": "Verify backend configuration uses us-west-2 region"
+      }
+    ]
+  },
+  {
+    "id": "2",
+    "title": "PHASE 2: Code Quality and Maintainability",
+    "description": "Remove hardcoded values and improve code maintainability",
+    "details": "This phase makes the infrastructure more maintainable by removing hardcoded values, improving error handling, and making scripts more flexible. These changes prevent future issues and make the repository more professional.",
+    "status": "pending",
+    "priority": "high",
+    "dependencies": ["1"],
+    "subtasks": [
+      {
+        "id": "2.1",
+        "title": "Remove hardcoded VPC ID from cleanup script",
+        "description": "Make cleanup script dynamically find VPC instead of hardcoding",
+        "details": "Update scripts/cleanup-aws-resources.sh line 92 to remove hardcoded 'vpc-416eeb39' filter. Instead, find security groups by name pattern only, then verify they're demo-related by checking tags. This makes the script work if VPC changes. Alternative: read VPC from terraform.tfvars or environment variable.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": [],
+        "testStrategy": "Test cleanup script in environment, verify it finds security groups correctly, test with different VPC to ensure it's not hardcoded"
+      },
+      {
+        "id": "2.2",
+        "title": "Parameterize workflow with terraform.tfvars values",
+        "description": "Make workflow read configuration from tfvars instead of hardcoding",
+        "details": "Update .github/workflows/deploy-demo.yml to read key values from terraform.tfvars instead of hardcoding them. Consider: 1) Reading tfvars in a pre-step and exporting as env vars, 2) Using workflow inputs with tfvars as defaults, 3) Creating a config.yaml that both Terraform and workflows read. This prevents workflow and tfvars from getting out of sync.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.1"],
+        "testStrategy": "Deploy using workflow and verify it uses tfvars values, change tfvars value and verify workflow picks up change"
+      },
+      {
+        "id": "2.3",
+        "title": "Add workflow input parameters for key settings",
+        "description": "Allow manual workflow runs to override instance type and other settings",
+        "details": "Add workflow_dispatch inputs to deploy-demo.yml for: instance_type (default from tfvars), aws_region (default from tfvars), demo_branch (default from tfvars). This allows manual runs to test different configurations without changing committed files. Useful for testing scaling or deploying to different regions.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["2.2"],
+        "testStrategy": "Manually trigger workflow with custom instance_type, verify it uses the specified value, test with default values work as expected"
+      },
+      {
+        "id": "2.4",
+        "title": "Create configuration validation script",
+        "description": "Add pre-flight validation to catch configuration issues early",
+        "details": "Create scripts/validate-config.sh that checks: 1) All config files exist, 2) tfvars and workflow values match, 3) Instance types are valid AWS types, 4) Branch names exist in Sirius repo, 5) Regions are consistent, 6) VPC and subnet exist in AWS, 7) Health endpoint paths are consistent. Run this before deployment to catch issues early.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.3", "1.4", "1.6"],
+        "testStrategy": "Run validation script, verify it catches mismatched configurations, test with intentionally broken config to ensure it fails appropriately"
+      },
+      {
+        "id": "2.5",
+        "title": "Add validation to deploy workflow",
+        "description": "Integrate validation script into CI/CD pipeline",
+        "details": "Add step to .github/workflows/deploy-demo.yml (after checkout, before Terraform init) that runs validate-config.sh. This prevents deployments with invalid configuration. Make it fail fast if validation errors found.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["2.4"],
+        "testStrategy": "Test workflow with invalid config, verify it fails at validation step, test with valid config completes successfully"
+      },
+      {
+        "id": "2.6",
+        "title": "Improve error messages in scripts",
+        "description": "Add better error handling and informative messages to all scripts",
+        "details": "Review all scripts in scripts/ directory and improve: 1) Add set -euo pipefail for strict error handling, 2) Add descriptive error messages before exit, 3) Add function for error logging, 4) Include context in error messages (what failed, why, what to do). Focus on user_data.sh, cleanup-aws-resources.sh, and wait_for_api.sh.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": [],
+        "testStrategy": "Introduce errors in scripts, verify error messages are clear and actionable, test error handling catches expected failures"
+      }
+    ]
+  },
+  {
+    "id": "3",
+    "title": "PHASE 3: Documentation Updates",
+    "description": "Update all documentation to reflect current configuration and best practices",
+    "details": "Documentation is currently outdated and inconsistent. This phase ensures all documentation accurately reflects the current system, uses correct values, and provides clear guidance for users.",
+    "status": "pending",
+    "priority": "medium",
+    "dependencies": ["1", "2"],
+    "subtasks": [
+      {
+        "id": "3.1",
+        "title": "Update README.md with correct instance types and costs",
+        "description": "Fix all references to instance types and cost estimates in main README",
+        "details": "Update README.md: 1) Line 176: Change DEMO_INSTANCE_TYPE=t2.large to t3.small, 2) Line 187: Change instance_type = \"t2.large\" to \"t3.small\", 3) Line 279: Update cost estimate for t3.small (~$15/month), 4) Update all cost impact sections with accurate t3.small pricing, 5) Update 'Cost Optimization' section to reflect actual configuration. Ensure consistency throughout document.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["1.1"],
+        "testStrategy": "Grep README for t2.large and t3.medium, verify only t3.small is referenced, verify cost calculations are accurate, review all cost-related sections"
+      },
+      {
+        "id": "3.2",
+        "title": "Update README.md with correct regions",
+        "description": "Ensure README consistently references us-west-2",
+        "details": "Review README.md and update any us-east-1 references to us-west-2 where appropriate. Keep references in 'Alternative regions' context if discussing multi-region. Ensure all examples, commands, and SSM commands use us-west-2.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.6"],
+        "testStrategy": "Grep for us-east-1 in README, verify all operational commands use us-west-2, verify region is correct in all examples"
+      },
+      {
+        "id": "3.3",
+        "title": "Update README.md with correct health endpoint",
+        "description": "Document the correct API health endpoint path",
+        "details": "Update README.md to consistently reference the correct health endpoint (determined in task 1.2). Update examples that show health check commands or URLs. Ensure health check section accurately describes the endpoint path and response format.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.3"],
+        "testStrategy": "Verify README health endpoint examples match actual implementation, test example commands work correctly"
+      },
+      {
+        "id": "3.4",
+        "title": "Update README.md with correct branch names",
+        "description": "Ensure README references correct demo branch",
+        "details": "Review README.md and ensure all references to the Sirius demo branch use 'demo' not 'sirius-demo'. Update setup instructions, deployment examples, and troubleshooting sections. Verify git commands show correct branch name.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.4"],
+        "testStrategy": "Grep for branch references in README, verify all use 'demo', test git commands in examples work correctly"
+      },
+      {
+        "id": "3.5",
+        "title": "Update DEPLOYMENT_STATUS.md with current deployment info",
+        "description": "Document current instance details and deployment status",
+        "details": "Update DEPLOYMENT_STATUS.md with: 1) Current date (October 11, 2025), 2) Current instance ID (i-06e56eabce9018a69), 3) Actual instance type (t2.large currently, will be t3.small after fixes), 4) Current deployment status, 5) Any issues encountered and resolved, 6) Update 'Next Actions' based on investigation findings. Consider whether this file should be auto-updated by deployment workflow.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": [],
+        "testStrategy": "Verify all instance details are current, confirm status reflects actual deployment state"
+      },
+      {
+        "id": "3.6",
+        "title": "Update documentation to reflect actual architecture",
+        "description": "Ensure documentation matches implemented system, not planned system",
+        "details": "Review PRD.txt, PROJECT_PLAN.md, and other planning docs. Add note at top indicating these are historical planning documents. Update QUICKSTART.md to match current implementation. Remove or clearly mark outdated information. Consider moving planning docs to docs/planning/ to distinguish from operational docs.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["3.1", "3.2", "3.3", "3.4"],
+        "testStrategy": "Review all documentation files, verify operational docs are accurate, verify historical docs are clearly marked"
+      },
+      {
+        "id": "3.7",
+        "title": "Update AWS setup guides with correct regions and values",
+        "description": "Ensure setup guides use correct default values",
+        "details": "Update docs/AWS_SETUP_GUIDE.md and docs/AWS_ACCESS_KEYS_SETUP.md: 1) Change default region references from us-east-1 to us-west-2, 2) Update example commands to use us-west-2, 3) Update instance type references to t3.small, 4) Ensure VPC/subnet examples match current configuration or use placeholders, 5) Update cost estimates to match t3.small pricing.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.6", "3.1"],
+        "testStrategy": "Follow setup guide from scratch, verify all commands work, verify region and instance type values are consistent"
+      },
+      {
+        "id": "3.8",
+        "title": "Update terraform.tfvars.example to match best practices",
+        "description": "Ensure example configuration file is accurate and helpful",
+        "details": "Review infra/demo/terraform.tfvars.example: 1) Ensure all comments are accurate, 2) Update instance type to t3.small with correct specs (2 vCPU, 2GB RAM), 3) Update region to us-west-2, 4) Update branch to 'demo', 5) Add comments explaining cost optimization choices, 6) Ensure example matches actual tfvars structure exactly.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["1.4", "1.5", "1.6"],
+        "testStrategy": "Copy example to terraform.tfvars, verify it works without modification, ensure comments are helpful"
+      },
+      {
+        "id": "3.9",
+        "title": "Create INVESTIGATION-REPORT.md changelog entry",
+        "description": "Document the investigation and fixes in CHANGELOG",
+        "details": "Add entry to CHANGELOG.md (or create if it doesn't exist in demo repo) documenting: 1) Investigation findings, 2) Issues discovered, 3) Fixes implemented, 4) Cost savings achieved, 5) Reference to INVESTIGATION-REPORT.md. Follow conventional changelog format with date, version (if applicable), and categorized changes.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["3.1", "3.2", "3.3", "3.4"],
+        "testStrategy": "Verify changelog entry is complete and accurate, follows project conventions"
+      }
+    ]
+  },
+  {
+    "id": "4",
+    "title": "PHASE 4: Infrastructure Improvements",
+    "description": "Enable remote state management and improve infrastructure resilience",
+    "details": "These improvements make the infrastructure more robust and suitable for team collaboration. Remote state management prevents state corruption, and validation prevents deployment issues.",
+    "status": "pending",
+    "priority": "medium",
+    "dependencies": ["1", "2", "3"],
+    "subtasks": [
+      {
+        "id": "4.1",
+        "title": "Create S3 bucket for Terraform state",
+        "description": "Set up S3 bucket for storing Terraform state remotely",
+        "details": "Create S3 bucket for Terraform remote state: 1) Name: sirius-demo-tfstate-{account-id}, 2) Region: us-west-2, 3) Enable versioning, 4) Enable encryption (AES256 or KMS), 5) Block public access, 6) Add tags (Project=SiriusDemo, ManagedBy=Terraform), 7) Enable lifecycle policy to clean old versions after 90 days. Can use AWS Console, CLI, or separate Terraform config.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": [],
+        "testStrategy": "Verify bucket exists with correct configuration, test versioning by uploading test object, verify encryption is enabled, confirm public access is blocked"
+      },
+      {
+        "id": "4.2",
+        "title": "Create DynamoDB table for state locking",
+        "description": "Set up DynamoDB table for Terraform state locking",
+        "details": "Create DynamoDB table for state locking: 1) Name: sirius-demo-tflock, 2) Primary key: 'LockID' (String), 3) Use on-demand billing, 4) Enable point-in-time recovery, 5) Add tags (Project=SiriusDemo, ManagedBy=Terraform), 6) Region: us-west-2. This prevents concurrent Terraform operations from corrupting state.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": [],
+        "testStrategy": "Verify table exists with correct key, test by attempting to acquire lock, verify billing mode is on-demand"
+      },
+      {
+        "id": "4.3",
+        "title": "Update IAM permissions for remote state",
+        "description": "Ensure AWS credentials have permissions for S3 and DynamoDB",
+        "details": "Update IAM policy for GitHub Actions credentials (or create separate policy) to include: 1) S3 permissions: s3:GetObject, s3:PutObject, s3:ListBucket on state bucket, 2) DynamoDB permissions: dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem on lock table, 3) Document required permissions in AWS_ACCESS_KEYS_SETUP.md.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["4.1", "4.2"],
+        "testStrategy": "Test Terraform init with backend, verify credentials can read/write state, test state locking works"
+      },
+      {
+        "id": "4.4",
+        "title": "Enable S3 backend in Terraform configuration",
+        "description": "Uncomment and configure S3 backend in main.tf",
+        "details": "Update infra/demo/main.tf lines 11-18: 1) Uncomment backend 's3' block, 2) Verify bucket name matches created bucket, 3) Verify region is us-west-2, 4) Verify DynamoDB table name is correct, 5) Add comment explaining backend configuration. Consider using backend config file (backend.hcl) for flexibility.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["4.1", "4.2", "4.3"],
+        "testStrategy": "Run terraform init, verify it connects to S3 backend, verify state is stored in S3, test state locking by running concurrent operations"
+      },
+      {
+        "id": "4.5",
+        "title": "Migrate existing state to S3 backend",
+        "description": "Move local state file to remote S3 backend",
+        "details": "If local state exists: 1) Run 'terraform init' to initialize backend, 2) Terraform will prompt to migrate state, 3) Confirm migration, 4) Verify state in S3 bucket, 5) Remove local state files after successful migration, 6) Document migration process in runbook. If no local state, this step can be skipped.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["4.4"],
+        "testStrategy": "Verify state exists in S3, verify local state is removed, test terraform plan works with remote state"
+      },
+      {
+        "id": "4.6",
+        "title": "Update workflow to use remote state",
+        "description": "Ensure GitHub Actions workflow uses S3 backend",
+        "details": "Update .github/workflows/deploy-demo.yml: 1) Remove '-backend=false' flag from terraform init commands (lines 86, 143), 2) Ensure AWS credentials have backend permissions, 3) Test workflow successfully initializes with remote backend, 4) Verify state locking prevents concurrent runs. Backend will be automatically used once enabled in main.tf.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["4.5"],
+        "testStrategy": "Run workflow, verify it uses S3 backend, verify state is updated in S3 after deployment, test concurrent runs are prevented by lock"
+      },
+      {
+        "id": "4.7",
+        "title": "Add pre-commit validation hook",
+        "description": "Create git pre-commit hook to catch issues before commit",
+        "details": "Create .git/hooks/pre-commit script that: 1) Runs terraform fmt check, 2) Runs terraform validate, 3) Runs validate-config.sh (from task 2.4), 4) Checks for hardcoded values (grep for vpc-416eeb39, t2.large, etc), 5) Verifies tfvars.example matches tfvars structure. Make executable. Consider using pre-commit framework for better management.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["2.4"],
+        "testStrategy": "Make intentional config error, attempt commit, verify hook catches error, test with valid changes commits successfully"
+      }
+    ]
+  },
+  {
+    "id": "5",
+    "title": "PHASE 5: Testing, Deployment, and Verification",
+    "description": "Test all fixes, deploy with correct configuration, and verify everything works",
+    "details": "This final phase validates that all fixes work correctly in practice. Deploy a new instance with the correct configuration, verify it works as expected, and update all status documentation.",
+    "status": "pending",
+    "priority": "high",
+    "dependencies": ["1", "2", "3", "4"],
+    "subtasks": [
+      {
+        "id": "5.1",
+        "title": "Run local validation of all changes",
+        "description": "Validate all configuration changes before deploying",
+        "details": "Before deployment, validate: 1) Run terraform fmt and terraform validate, 2) Run validate-config.sh (if created in 2.4), 3) Grep for any remaining hardcoded problem values, 4) Review all changed files for consistency, 5) Check git diff to ensure only intended changes are included. This catches issues before they affect deployment.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": [],
+        "testStrategy": "All validation commands pass, no unexpected changes in git diff, configuration files are consistent"
+      },
+      {
+        "id": "5.2",
+        "title": "Test manual Terraform deployment locally",
+        "description": "Verify manual deployment works with all fixes",
+        "details": "Test manual deployment: 1) cd infra/demo, 2) terraform init (with backend if enabled), 3) terraform plan -out=tfplan, 4) Review plan output carefully - verify instance_type is t3.small, region is us-west-2, branch is 'demo', 5) Don't apply yet if current instance is running. This validates Terraform configuration before CI/CD deployment.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["5.1"],
+        "testStrategy": "Terraform plan succeeds, plan output shows correct values (t3.small, us-west-2, demo branch), no unexpected changes"
+      },
+      {
+        "id": "5.3",
+        "title": "Commit all configuration fixes",
+        "description": "Commit Phase 1 and Phase 2 fixes to repository",
+        "details": "Create atomic commits for changes: 1) Commit instance type fix with clear message about cost savings, 2) Commit health endpoint standardization, 3) Commit branch and region fixes, 4) Commit hardcoded value removals, 5) Use conventional commit format: 'fix(workflow): change instance type from t2.large to t3.small for cost optimization'. Include task reference in commit body.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["5.2"],
+        "testStrategy": "Git log shows clear, atomic commits, all changes are committed, working directory is clean"
+      },
+      {
+        "id": "5.4",
+        "title": "Deploy via CI/CD workflow",
+        "description": "Trigger GitHub Actions workflow to deploy with correct configuration",
+        "details": "Trigger deployment workflow: 1) Push commits to main branch (or create PR and merge), 2) Workflow will automatically trigger, OR manually trigger: 'gh workflow run deploy-demo.yml', 3) Monitor workflow progress in GitHub Actions UI, 4) Watch for successful completion of all steps, 5) Note new instance ID and IP from workflow output.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["5.3"],
+        "testStrategy": "Workflow completes successfully, new instance is created with t3.small type, all health checks pass, services are accessible"
+      },
+      {
+        "id": "5.5",
+        "title": "Verify new instance configuration",
+        "description": "Confirm deployed instance has correct configuration",
+        "details": "Verify deployment: 1) Check AWS Console or CLI for instance type: 'aws ec2 describe-instances --instance-ids <id> --query 'Reservations[0].Instances[0].InstanceType'', 2) Should show t3.small, 3) Verify instance is in us-west-2, 4) Verify services are running via health endpoints, 5) Check resource tags are correct, 6) Verify EIP is associated (for DNS consistency).",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["5.4"],
+        "testStrategy": "Instance type is t3.small, region is us-west-2, all services respond to health checks, EIP is properly associated"
+      },
+      {
+        "id": "5.6",
+        "title": "Test API and UI functionality",
+        "description": "Verify deployed application works correctly",
+        "details": "Test application: 1) Access UI at http://sirius.opensecurity.com:3000 or http://<IP>:3000, 2) Verify UI loads and displays correctly, 3) Test API at http://sirius.opensecurity.com:9001/health (or correct endpoint from 1.3), 4) Verify API returns healthy status with correct JSON format, 5) Test basic application functionality if possible, 6) Check that demo mode features work if applicable.",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["5.5"],
+        "testStrategy": "UI is accessible and functional, API health endpoint returns 200 OK with valid JSON, basic features work as expected"
+      },
+      {
+        "id": "5.7",
+        "title": "Monitor instance for 24 hours",
+        "description": "Ensure instance remains stable with new configuration",
+        "details": "Monitor deployment: 1) Check instance status after 1 hour, 4 hours, 8 hours, 24 hours, 2) Verify services remain healthy, 3) Check CloudWatch metrics if available (CPU, memory, network), 4) Monitor for any errors in application logs, 5) Verify t3.small has adequate resources (current usage is ~800MB RAM, so 2GB should be sufficient). This confirms t3.small is appropriate for the workload.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["5.6"],
+        "testStrategy": "Instance remains running and healthy, services are responsive, no resource constraints observed, CPU/memory within acceptable ranges"
+      },
+      {
+        "id": "5.8",
+        "title": "Update DEPLOYMENT_STATUS.md with verified info",
+        "description": "Document successful deployment with all new details",
+        "details": "Update DEPLOYMENT_STATUS.md: 1) Update date to deployment date, 2) Update instance ID to new instance, 3) Update instance type to t3.small, 4) Update public IP (or note EIP is consistent), 5) Update status to reflect all fixes implemented, 6) Add section documenting the investigation and fixes, 7) Include cost savings achieved ($52.56/month), 8) Update 'Next Actions' to reflect completed work and any remaining tasks.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["5.7"],
+        "testStrategy": "Deployment status reflects actual current state, all information is accurate and up-to-date"
+      },
+      {
+        "id": "5.9",
+        "title": "Commit documentation updates",
+        "description": "Commit all Phase 3 documentation changes",
+        "details": "Commit documentation updates: 1) README.md updates, 2) DEPLOYMENT_STATUS.md updates, 3) Setup guide updates, 4) Example config updates, 5) Use conventional commit: 'docs: update all documentation to reflect t3.small configuration and current deployment'. Include reference to investigation report and cost savings.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["5.8"],
+        "testStrategy": "All documentation changes are committed, git log shows clear commit message, working directory is clean"
+      },
+      {
+        "id": "5.10",
+        "title": "Terminate old t2.large instance",
+        "description": "Clean up old expensive instance to realize cost savings",
+        "details": "Terminate old instance: 1) Verify new t3.small instance is fully functional, 2) Note old instance ID: i-06e56eabce9018a69, 3) Terminate via AWS Console or CLI: 'aws ec2 terminate-instances --instance-ids i-06e56eabce9018a69 --region us-west-2', 4) Verify termination completes, 5) Check that EIP remains associated with new instance, 6) Confirm cost savings begin accumulating ($52.56/month).",
+        "status": "pending",
+        "priority": "high",
+        "dependencies": ["5.7"],
+        "testStrategy": "Old instance is terminated, new instance remains running and healthy, EIP is correctly associated, demo is still accessible"
+      },
+      {
+        "id": "5.11",
+        "title": "Verify cost reduction in AWS billing",
+        "description": "Confirm cost savings are realized in AWS billing",
+        "details": "Check AWS billing: 1) Go to AWS Cost Explorer or billing dashboard, 2) Check current month costs, 3) Compare EC2 costs before and after change, 4) Calculate actual savings (should be ~$52/month), 5) Set up billing alert if not already configured (alert if demo costs exceed $30/month), 6) Document actual costs in investigation report or deployment status.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": ["5.10"],
+        "testStrategy": "AWS billing shows reduced EC2 costs, cost reduction approximately matches expectations, billing alert is configured"
+      },
+      {
+        "id": "5.12",
+        "title": "Create summary report of completed work",
+        "description": "Document all fixes, testing, and outcomes",
+        "details": "Create final summary: 1) Update INVESTIGATION-REPORT.md with 'Implementation Complete' section, 2) List all tasks completed, 3) Document test results, 4) Confirm cost savings achieved, 5) Note any issues encountered and resolutions, 6) List any remaining technical debt or future improvements, 7) Include before/after comparison (t2.large vs t3.small, cost, consistency improvements).",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": ["5.11"],
+        "testStrategy": "Summary report is complete and accurate, all stakeholders can understand what was done and why"
+      }
+    ]
+  }
+]
+

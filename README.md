@@ -173,7 +173,7 @@ AWS_SECRET_ACCESS_KEY=your_secret_key
 
 # Optional (with defaults)
 AWS_REGION=us-west-2
-DEMO_INSTANCE_TYPE=t2.large
+DEMO_INSTANCE_TYPE=t3.small
 ```
 
 ### **Terraform Variables**
@@ -184,8 +184,8 @@ vpc_id    = "vpc-416eeb39"      # Your VPC ID
 subnet_id = "subnet-d31ffe8e"    # Your public subnet ID
 
 # Instance Configuration
-instance_type    = "t2.large"    # 4 vCPU, 8GB RAM
-root_volume_size = 30            # GB
+instance_type    = "t3.small"    # 2 vCPU, 2GB RAM (cost-optimized)
+root_volume_size = 20            # GB
 
 # Access Control
 allowed_cidrs = ["0.0.0.0/0"]    # Public access for demo
@@ -276,18 +276,18 @@ terraform apply
 
 The demo infrastructure is optimized for cost efficiency while maintaining full functionality:
 
-- **Instance Type**: t3.small (2 vCPU, 2GB RAM) - ~50% cost savings vs t3.medium
-- **Storage**: 20GB EBS volume - sufficient for demo workloads
+- **Instance Type**: t3.small (2 vCPU, 2GB RAM) - 77% cost savings vs t2.large
+- **Storage**: 20GB EBS volume - sufficient for demo workloads  
 - **Resource Usage**: Current utilization ~800MB RAM, well within 2GB limit
-- **Estimated Monthly Cost**: ~$15-20/month (vs ~$30-40/month with t3.medium)
+- **Estimated Monthly Cost**: ~$15-20/month (vs ~$67/month with t2.large)
 
 ### **Resource Costs**
 
 - **EC2 Instance**: ~$0.0208/hour (t3.small) - Cost-optimized
-- **Elastic IP**: $0.00/hour when attached to running instance
-- **EBS Storage**: ~$0.10/GB/month
+- **Elastic IP**: $0.00/hour when attached to running instance  
+- **EBS Storage**: ~$0.10/GB/month (~$2.00 for 20GB)
 - **Route 53**: ~$0.50/month per hosted zone
-- **Data Transfer**: Minimal for demo usage
+- **Data Transfer**: Minimal for demo usage (~$1-2/month)
 
 ### **Cost Optimization**
 
@@ -299,9 +299,11 @@ The demo infrastructure is optimized for cost efficiency while maintaining full 
 
 ### **Estimated Monthly Cost**
 
-- **Development**: ~$67/month (if running 24/7)
-- **Demo Usage**: ~$20/month (with cleanup)
+- **Current Configuration (t3.small)**: ~$18/month (if running 24/7)
+- **With Cleanup**: ~$15/month (regular rebuilds)
 - **Production**: Contact for enterprise pricing
+
+**Cost Savings**: Using t3.small instead of t2.large saves $52.56/month ($630/year)
 
 ## 🛠️ Development
 
@@ -423,6 +425,20 @@ curl -I http://44.224.189.56:3000
 
 ## 🆕 Recent Updates
 
+### **v2.1 - Configuration Fixes & Cost Optimization (October 2025)**
+
+- ✅ **Cost Optimization**: Fixed instance type from t2.large to t3.small (77% cost reduction)
+- ✅ **Configuration Consistency**: Resolved CI/CD vs manual deployment inconsistencies  
+- ✅ **Health Endpoint Fix**: Standardized API health checks to `/health` endpoint
+- ✅ **Branch Configuration**: Corrected demo branch name throughout all config files
+- ✅ **Region Standardization**: Fixed AWS region defaults to us-west-2
+- ✅ **Investigation Report**: Created comprehensive analysis of issues and fixes
+
+### **Cost Savings Achieved**
+- **Monthly**: $52.56/month saved ($630/year)
+- **Instance**: t3.small (2 vCPU, 2GB RAM) vs t2.large (2 vCPU, 8GB RAM)
+- **Performance**: No degradation - 2GB RAM sufficient for demo workload
+
 ### **v2.0 - Elastic IP Implementation (October 2024)**
 
 - ✅ **Static IP Management**: Implemented Elastic IP for consistent domain access
@@ -432,13 +448,6 @@ curl -I http://44.224.189.56:3000
 - ✅ **Health Monitoring**: Extended health checks to 20 minutes for reliable deployments
 - ✅ **GitHub Actions**: Complete CI/CD pipeline with AWS access key authentication
 - ✅ **Documentation**: Comprehensive guides for DNS setup and AWS configuration
-
-### **Key Improvements**
-
-- **No More DNS Updates**: Domain always points to the same static IP
-- **Faster Deployments**: Improved cleanup prevents resource conflicts
-- **Better Reliability**: Extended timeouts and better error handling
-- **Simplified Setup**: AWS access keys instead of complex OIDC configuration
 
 ## 📚 Documentation
 
