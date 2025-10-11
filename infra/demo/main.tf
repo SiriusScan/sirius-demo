@@ -83,6 +83,18 @@ resource "aws_security_group" "demo" {
     cidr_blocks = var.allowed_cidrs
   }
 
+  # SSH access (conditional on key_pair_name being set)
+  dynamic "ingress" {
+    for_each = var.key_pair_name != "" ? [1] : []
+    content {
+      description = "SSH Access"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = length(var.ssh_allowed_cidrs) > 0 ? var.ssh_allowed_cidrs : var.allowed_cidrs
+    }
+  }
+
   # Allow all outbound traffic
   egress {
     description = "All outbound traffic"
@@ -145,6 +157,15 @@ resource "aws_iam_instance_profile" "demo" {
   }
 }
 
+# Elastic IP for demo (static IP that persists across instance recreations)
+resource "aws_eip" "demo" {
+  domain = "vpc"
+  
+  tags = {
+    Name = "sirius-demo-eip"
+  }
+}
+
 # EC2 Instance for demo
 resource "aws_instance" "demo" {
   ami           = data.aws_ami.ubuntu.id
@@ -153,6 +174,9 @@ resource "aws_instance" "demo" {
 
   vpc_security_group_ids = [aws_security_group.demo.id]
   iam_instance_profile   = aws_iam_instance_profile.demo.name
+  
+  # SSH key pair (conditional)
+  key_name = var.key_pair_name != "" ? var.key_pair_name : null
 
   root_block_device {
     volume_type           = "gp3"
@@ -172,5 +196,11 @@ resource "aws_instance" "demo" {
   tags = {
     Name = "sirius-demo"
   }
+}
+
+# Associate EIP with instance
+resource "aws_eip_association" "demo" {
+  instance_id   = aws_instance.demo.id
+  allocation_id = aws_eip.demo.id
 }
 

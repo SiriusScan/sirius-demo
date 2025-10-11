@@ -16,6 +16,11 @@ root_volume_size   = 30
 # Use 0.0.0.0/0 for public demo, or restrict to specific IPs
 allowed_cidrs = ["0.0.0.0/0"]
 
+# SSH Access (optional - for troubleshooting)
+# Leave empty to disable SSH access (SSM Session Manager only)
+key_pair_name = ""  # e.g., "my-key-pair"
+# ssh_allowed_cidrs = ["1.2.3.4/32"]  # Restrict SSH to specific IPs
+
 # Repository Configuration
 sirius_repo_url = "https://github.com/YourOrg/Sirius.git"
 demo_branch     = "demo"

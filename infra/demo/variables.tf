@@ -44,6 +44,18 @@ variable "demo_branch" {
   default     = "demo"
 }
 
+variable "key_pair_name" {
+  description = "Name of the AWS key pair to use for SSH access (optional, leave empty to disable SSH)"
+  type        = string
+  default     = ""
+}
+
+variable "ssh_allowed_cidrs" {
+  description = "CIDR blocks allowed for SSH access (defaults to allowed_cidrs if not specified)"
+  type        = list(string)
+  default     = []
+}
+
 variable "common_tags" {
   description = "Common tags applied to all resources"
   type        = map(string)

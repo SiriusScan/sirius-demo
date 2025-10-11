@@ -1,23 +1,23 @@
 #!/bin/bash
 
 # Update DNS record for SiriusScan demo
-# Usage: ./update-dns.sh <public-ip> <domain> [subdomain]
+# Usage: ./update-dns.sh <elastic-ip> <domain> [subdomain]
 
 set -e
 
-PUBLIC_IP="$1"
+ELASTIC_IP="$1"
 DOMAIN="$2"
 SUBDOMAIN="${3:-demo}"
 
-if [ -z "$PUBLIC_IP" ] || [ -z "$DOMAIN" ]; then
-    echo "Usage: $0 <public-ip> <domain> [subdomain]"
+if [ -z "$ELASTIC_IP" ] || [ -z "$DOMAIN" ]; then
+    echo "Usage: $0 <elastic-ip> <domain> [subdomain]"
     echo "Example: $0 34.219.87.111 yourdomain.com demo"
     exit 1
 fi
 
 FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN}"
 
-echo "🌐 Updating DNS record for $FULL_DOMAIN -> $PUBLIC_IP"
+echo "🌐 Updating DNS A record for $FULL_DOMAIN -> $ELASTIC_IP"
 
 # Check if Route 53 hosted zone exists
 HOSTED_ZONE_ID=$(aws route53 list-hosted-zones --query "HostedZones[?Name=='${DOMAIN}.'].Id" --output text)
@@ -48,7 +48,7 @@ cat > /tmp/dns-change.json << EOF
                 "TTL": 300,
                 "ResourceRecords": [
                     {
-                        "Value": "$PUBLIC_IP"
+                        "Value": "$ELASTIC_IP"
                     }
                 ]
             }
