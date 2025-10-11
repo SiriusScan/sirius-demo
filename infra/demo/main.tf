@@ -8,14 +8,14 @@ terraform {
     }
   }
 
-  # Backend configuration - uncomment after creating S3 bucket
-  # backend "s3" {
-  #   bucket         = "sirius-demo-tfstate"
-  #   key            = "demo/terraform.tfstate"
-  #   region         = "us-west-2"
-  #   encrypt        = true
-  #   dynamodb_table = "sirius-demo-tflock"
-  # }
+  # Backend configuration for remote state management
+  backend "s3" {
+    bucket         = "sirius-demo-tfstate-463192224457"
+    key            = "demo/terraform.tfstate"
+    region         = "us-west-2"
+    encrypt        = true
+    dynamodb_table = "sirius-demo-tflock"
+  }
 }
 
 provider "aws" {
