@@ -36,7 +36,7 @@ terraform apply
 
 ### **Infrastructure Stack**
 
-- **Compute**: AWS EC2 (t2.large, 4 vCPU, 8GB RAM)
+- **Compute**: AWS EC2 (t3.small, 2 vCPU, 2GB RAM) - Cost-optimized for demo
 - **Networking**: VPC with public subnet, security groups
 - **Static IP**: Elastic IP for consistent domain access
 - **DNS**: AWS Route 53 with automatic A record updates
@@ -272,9 +272,18 @@ terraform apply
 
 ## 💰 Cost Management
 
+### **Cost Optimization**
+
+The demo infrastructure is optimized for cost efficiency while maintaining full functionality:
+
+- **Instance Type**: t3.small (2 vCPU, 2GB RAM) - ~50% cost savings vs t3.medium
+- **Storage**: 20GB EBS volume - sufficient for demo workloads
+- **Resource Usage**: Current utilization ~800MB RAM, well within 2GB limit
+- **Estimated Monthly Cost**: ~$15-20/month (vs ~$30-40/month with t3.medium)
+
 ### **Resource Costs**
 
-- **EC2 Instance**: ~$0.0928/hour (t2.large)
+- **EC2 Instance**: ~$0.0208/hour (t3.small) - Cost-optimized
 - **Elastic IP**: $0.00/hour when attached to running instance
 - **EBS Storage**: ~$0.10/GB/month
 - **Route 53**: ~$0.50/month per hosted zone

@@ -5,15 +5,15 @@ variable "aws_region" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type for demo"
+  description = "EC2 instance type for demo (cost-optimized for production demo)"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.small"
 }
 
 variable "root_volume_size" {
-  description = "Root EBS volume size in GB"
+  description = "Root EBS volume size in GB (cost-optimized for demo)"
   type        = number
-  default     = 30
+  default     = 20
 }
 
 variable "vpc_id" {
