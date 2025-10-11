@@ -247,10 +247,10 @@ jobs:
           - **API**: http://$PUBLIC_IP:9001
           - **Health Check**: http://$PUBLIC_IP:9001/health
 
-        ## Domain Access (Static IP)
-        - **UI**: http://sirius.opensecurity.com:3000
-        - **API**: http://sirius.opensecurity.com:9001
-        - **Elastic IP**: ${{ steps.deploy.outputs.elastic_ip }}
+          ## Domain Access (Static IP)
+          - **UI**: http://sirius.opensecurity.com:3000
+          - **API**: http://sirius.opensecurity.com:9001
+          - **Elastic IP**: ${{ steps.deploy.outputs.elastic_ip }}
 
           ## SSM Access
           \`\`\`bash
