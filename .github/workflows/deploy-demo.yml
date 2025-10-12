@@ -46,7 +46,7 @@ on:
 env:
   AWS_REGION: us-west-2
   TERRAFORM_DIR: infra/demo
-  DEMO_INSTANCE_TYPE: t3.small
+  DEMO_INSTANCE_TYPE: t3.medium
 
 jobs:
   deploy:
