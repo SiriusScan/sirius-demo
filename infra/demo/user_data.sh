@@ -94,8 +94,9 @@ DATABASE_URL=postgresql://postgres:demo_password_change_in_production@sirius-pos
 # API
 API_PORT=9001
 GO_ENV=production
+CORS_ALLOWED_ORIGINS=*
 SIRIUS_API_URL=http://sirius-api:9001
-NEXT_PUBLIC_SIRIUS_API_URL=http://localhost:9001
+NEXT_PUBLIC_SIRIUS_API_URL=http://${elastic_ip}:9001
 
 # UI
 NODE_ENV=production
