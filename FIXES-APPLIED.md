@@ -1,4 +1,5 @@
 # Deployment Fixes Applied
+
 **Date**: October 11, 2025  
 **Status**: Ready for redeployment
 
@@ -11,11 +12,13 @@
 **Problem**: EIP was being destroyed and recreated on every deployment, causing DNS drift
 
 **Solutions Applied**:
+
 - ✅ Removed EIP cleanup from `scripts/cleanup-aws-resources.sh`
 - ✅ Added lifecycle policy to EIP resource in `infra/demo/main.tf`
 - ✅ EIP will now persist across deployments at: `44.254.118.59`
 
 **Files Changed**:
+
 - `scripts/cleanup-aws-resources.sh` - Lines 73-76 (removed EIP destruction)
 - `infra/demo/main.tf` - Added lifecycle block to aws_eip resource
 
@@ -26,6 +29,7 @@
 **Problem**: Demo branch was 29 commits behind main, missing go-api v0.0.10 fix
 
 **Solution Applied**:
+
 - ✅ Merged main into demo branch in Sirius repository
 - ✅ Pushed updated demo branch to origin
 - ✅ Now includes fix for Docker build failure
@@ -43,10 +47,12 @@
 **Problem**: SSH key wasn't being passed to Terraform in CI/CD workflow
 
 **Solution Applied**:
+
 - ✅ Added `-var='public_key=${{ secrets.DEMO_SSH_PUBLIC_KEY }}'` to workflow
 - ✅ Applied to both `terraform plan` and `terraform apply` steps
 
 **Files Changed**:
+
 - `.github/workflows/deploy-demo.yml` - Lines 100, 149
 
 **⚠️ ACTION REQUIRED**: Add GitHub Secret
@@ -98,12 +104,14 @@ Once you've added the GitHub secret, redeploy:
 ### **Step 1: Add GitHub Secret** (see above)
 
 ### **Step 2: Push Changes**
+
 ```bash
 cd /Users/oz/Projects/Sirius-Project/minor-projects/sirius-demo
 git push origin main
 ```
 
 ### **Step 3: Trigger Deployment**
+
 ```bash
 # Manual trigger
 gh workflow run deploy-demo.yml
@@ -112,6 +120,7 @@ gh workflow run deploy-demo.yml
 ```
 
 ### **Step 4: Monitor Deployment**
+
 ```bash
 # Watch in real-time
 gh run watch
@@ -152,15 +161,18 @@ ssh -i ~/.ssh/PRIME.pem ubuntu@44.254.118.59
 ### **✅ Success Criteria**
 
 1. **Elastic IP Preserved**:
+
    - Same IP across deployments: `44.254.118.59`
    - DNS can be set once and stay stable
 
 2. **Docker Build Succeeds**:
+
    - All containers build without errors
    - Services start successfully
    - Health checks pass
 
 3. **SSH Access Works**:
+
    - Port 22 open in security group
    - Can SSH into instance: `ssh -i ~/.ssh/PRIME.pem ubuntu@44.254.118.59`
    - Key pair `sirius-demo-key` exists in AWS
@@ -183,23 +195,25 @@ ssh -i ~/.ssh/PRIME.pem ubuntu@44.254.118.59
 
 ## 🎯 **What Was Fixed**
 
-| Issue | Status | Impact |
-|-------|--------|--------|
-| Elastic IP changing | ✅ Fixed | DNS will stay stable |
-| Demo branch outdated | ✅ Fixed | Docker build will succeed |
-| SSH not available | ✅ Fixed (needs secret) | Can troubleshoot instances |
-| Docker build failure | ✅ Fixed | Services will start |
+| Issue                | Status                  | Impact                     |
+| -------------------- | ----------------------- | -------------------------- |
+| Elastic IP changing  | ✅ Fixed                | DNS will stay stable       |
+| Demo branch outdated | ✅ Fixed                | Docker build will succeed  |
+| SSH not available    | ✅ Fixed (needs secret) | Can troubleshoot instances |
+| Docker build failure | ✅ Fixed                | Services will start        |
 
 ---
 
 ## 📝 **Commits Made**
 
 ### **sirius-demo repository**:
+
 ```
 950ecb7 - fix: preserve Elastic IP across deployments and enable SSH access
 ```
 
 ### **Sirius repository (demo branch)**:
+
 ```
 c1888fed - chore(demo): sync demo branch with main - include go-api v0.0.10 fix
 ```
@@ -225,4 +239,3 @@ c1888fed - chore(demo): sync demo branch with main - include go-api v0.0.10 fix
 ## 🎉 **Ready to Deploy!**
 
 All fixes have been applied and committed. Just add the GitHub secret and trigger the deployment!
-
