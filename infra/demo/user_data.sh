@@ -126,6 +126,11 @@ EOF
 
 echo "✅ Environment configuration created"
 
+# Clean up Docker to free space before building
+echo "🧹 Cleaning up Docker to free disk space..."
+docker system prune -f || true
+docker volume prune -f || true
+
 # Pull Docker images (to avoid timeout during compose up)
 echo "🐳 Pulling Docker images..."
 docker compose pull || echo "⚠️  Some images may need to build"
