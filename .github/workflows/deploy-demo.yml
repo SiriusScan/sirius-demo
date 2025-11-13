@@ -143,14 +143,14 @@ jobs:
         run: |
           echo "🚀 Deploying new demo infrastructure..."
           terraform -chdir=${{ env.TERRAFORM_DIR }} init
-        terraform -chdir=${{ env.TERRAFORM_DIR }} apply \
-          -var="vpc_id=vpc-416eeb39" \
-          -var="subnet_id=subnet-d31ffe8e" \
-          -var="aws_region=us-west-2" \
-          -var="instance_type=${{ env.DEMO_INSTANCE_TYPE }}" \
-          -var="root_volume_size=30" \
-          -var='public_key=${{ secrets.DEMO_SSH_PUBLIC_KEY }}' \
-          -auto-approve
+          terraform -chdir=${{ env.TERRAFORM_DIR }} apply \
+            -var="vpc_id=vpc-416eeb39" \
+            -var="subnet_id=subnet-d31ffe8e" \
+            -var="aws_region=us-west-2" \
+            -var="instance_type=${{ env.DEMO_INSTANCE_TYPE }}" \
+            -var="root_volume_size=30" \
+            -var='public_key=${{ secrets.DEMO_SSH_PUBLIC_KEY }}' \
+            -auto-approve
 
           # Get instance details
           INSTANCE_ID=$(terraform -chdir=${{ env.TERRAFORM_DIR }} output -raw instance_id)
