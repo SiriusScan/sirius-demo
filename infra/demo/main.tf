@@ -171,14 +171,14 @@ resource "aws_iam_instance_profile" "demo" {
 # Elastic IP for demo (static IP that persists across instance recreations)
 resource "aws_eip" "demo" {
   domain = "vpc"
-  
+
   tags = {
     Name = "sirius-demo-eip"
   }
-  
+
   # Prevent accidental deletion of static IP
   lifecycle {
-    prevent_destroy = false  # Set to true in production to fully protect
+    prevent_destroy       = false # Set to true in production to fully protect
     create_before_destroy = true
   }
 }
@@ -191,7 +191,7 @@ resource "aws_instance" "demo" {
 
   vpc_security_group_ids = [aws_security_group.demo.id]
   iam_instance_profile   = aws_iam_instance_profile.demo.name
-  
+
   # SSH key pair (conditional)
   key_name = var.public_key != "" ? aws_key_pair.demo[0].key_name : null
 
