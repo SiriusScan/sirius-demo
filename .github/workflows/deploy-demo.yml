@@ -163,11 +163,48 @@ jobs:
           echo "⏳ Waiting for instance to be ready..."
           sleep 60
 
+      - name: Collect diagnostics before health check
+        if: always()
+        run: |
+          echo "📊 Collecting system diagnostics..."
+          PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
+          INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
+          
+          # Try to get bootstrap logs via SSM if possible
+          echo "Attempting to retrieve bootstrap logs..."
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["tail -200 /var/log/sirius-bootstrap.log"]' \
+            --region us-west-2 \
+            --output text \
+            --query "Command.CommandId" > /tmp/command-id.txt 2>&1 || echo "SSM command failed, will check logs later"
+          
+          # Wait a moment for command to execute
+          sleep 5
+          
+          # Try to get command output
+          if [ -f /tmp/command-id.txt ] && [ -s /tmp/command-id.txt ]; then
+            COMMAND_ID=$(cat /tmp/command-id.txt | head -1)
+            if [ -n "$COMMAND_ID" ] && [ "$COMMAND_ID" != "None" ]; then
+              echo "Retrieving command output..."
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --region us-west-2 \
+                --query "StandardOutputContent" \
+                --output text 2>&1 | head -100 || echo "Could not retrieve SSM output"
+            fi
+          fi
+          
+          echo "Diagnostics collection complete"
+
       - name: Health check
         id: health
         run: |
           echo "🔍 Performing health checks..."
           PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
+          INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
 
           # Wait for API to be ready (up to 20 minutes with longer intervals)
           for i in {1..60}; do
@@ -176,6 +213,19 @@ jobs:
               break
             fi
             echo "⏳ Waiting for API... (attempt $i/60)"
+            
+            # Every 10 attempts, try to get some diagnostics
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "📊 Checking system status (attempt $i)..."
+              # Try to get Docker logs via SSM
+              aws ssm send-command \
+                --instance-ids "$INSTANCE_ID" \
+                --document-name "AWS-RunShellScript" \
+                --parameters 'commands=["cd /opt/sirius/repo && docker compose ps -a && docker compose logs --tail=30"]' \
+                --region us-west-2 \
+                --output text \
+                --query "Command.CommandId" > /tmp/docker-command-id.txt 2>&1 || true
+            fi
             sleep 20
           done
 
@@ -183,8 +233,37 @@ jobs:
           if ! curl -f -s http://$PUBLIC_IP:9001/health > /dev/null; then
             echo "❌ API health check failed after 20 minutes"
             echo "Checking API logs for debugging..."
-            # Try to get some debugging info
             curl -v http://$PUBLIC_IP:9001/health || true
+            
+            # Try to get comprehensive diagnostics
+            echo ""
+            echo "📊 Attempting to retrieve comprehensive diagnostics..."
+            INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
+            
+            # Get Docker status and logs
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=["cd /opt/sirius/repo && echo \"=== Container Status ===\" && docker compose ps -a && echo \"\" && echo \"=== API Logs ===\" && docker compose logs sirius-api --tail=100 && echo \"\" && echo \"=== All Logs ===\" && docker compose logs --tail=50"]' \
+              --region us-west-2 \
+              --output text \
+              --query "Command.CommandId" > /tmp/final-command-id.txt 2>&1 || true
+            
+            sleep 10
+            
+            if [ -f /tmp/final-command-id.txt ] && [ -s /tmp/final-command-id.txt ]; then
+              FINAL_CMD_ID=$(cat /tmp/final-command-id.txt | head -1)
+              if [ -n "$FINAL_CMD_ID" ] && [ "$FINAL_CMD_ID" != "None" ]; then
+                echo "Retrieving final diagnostics..."
+                aws ssm get-command-invocation \
+                  --command-id "$FINAL_CMD_ID" \
+                  --instance-id "$INSTANCE_ID" \
+                  --region us-west-2 \
+                  --query "StandardOutputContent" \
+                  --output text 2>&1 | head -200 || echo "Could not retrieve diagnostics"
+              fi
+            fi
+            
             exit 1
           fi
 
