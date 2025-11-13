@@ -55,12 +55,19 @@ terraform apply
 ### **CI/CD Pipeline**
 
 - **Automated Deployments**: GitHub Actions workflows
+- **Canary Behavior**: Demo automatically rebuilds on every push to Sirius main branch to catch bad commits
 - **Infrastructure as Code**: Terraform with remote state
 - **Static IP Management**: Elastic IP for consistent access
 - **DNS Management**: Automatic Route 53 A record updates
 - **Health Monitoring**: Comprehensive service checks with 20-minute timeout
 - **Cost Management**: Automatic cleanup of old resources
 - **Resource Cleanup**: Comprehensive AWS resource cleanup before deployment
+
+**Canary Deployment**: The demo acts as a canary deployment - it automatically rebuilds whenever code is pushed to the Sirius main branch. This ensures that any breaking changes or bad commits are caught immediately by the demo deployment failing. The demo rebuilds on:
+- Every push to Sirius main branch (via repository_dispatch)
+- Every push to sirius-demo main branch (direct push trigger)
+- Scheduled daily rebuilds (2 AM UTC)
+- Manual workflow dispatch
 
 ## 📁 Repository Structure
 
