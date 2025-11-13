@@ -32,6 +32,9 @@ on:
       - "data/**"
       - "fixtures/**"
       - ".github/workflows/**"
+      - "README.md"
+      - "QUICKSTART.md"
+      - "PROJECT_PLAN.md"
 
   # Trigger on pull requests to main
   pull_request:
