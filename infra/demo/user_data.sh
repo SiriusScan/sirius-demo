@@ -141,14 +141,28 @@ EOF
 
 echo "✅ Environment configuration created"
 
-# Pull Docker images (to avoid timeout during compose up)
-echo "🐳 Pulling Docker images..."
-docker compose pull || echo "⚠️  Some images may need to build"
+# Determine image tag from demo_branch variable
+if [[ "${demo_branch}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    # Version tag (e.g., v0.4.1)
+    IMAGE_TAG="${demo_branch}"
+elif [ "${demo_branch}" == "demo" ]; then
+    # Demo branch uses latest
+    IMAGE_TAG="latest"
+else
+    # Default to latest
+    IMAGE_TAG="latest"
+fi
+export IMAGE_TAG
+echo "📦 Using image tag: $${IMAGE_TAG}"
 
-# Start Docker Compose stack
+# Pull Docker images from registry
+echo "🐳 Pulling prebuilt images from GitHub Container Registry..."
+docker compose pull || echo "⚠️  Some images may need to be built (fallback)"
+
+# Start Docker Compose stack (uses prebuilt images by default)
 echo "🚀 Starting SiriusScan services..."
-echo "Building and starting services (this may take 5-10 minutes)..."
-docker compose up -d --build
+echo "Starting services with prebuilt images (this should take 2-5 minutes)..."
+docker compose up -d
 
 # Wait for services to be ready with health checks
 echo "⏳ Waiting for services to initialize..."
