@@ -67,10 +67,25 @@ cd /opt/sirius
 # Clone SiriusScan repository
 echo "📥 Cloning SiriusScan repository..."
 echo "Repository: ${sirius_repo_url}"
-echo "Branch: ${demo_branch}"
+echo "Branch/Tag: ${demo_branch}"
 
-git clone --branch ${demo_branch} ${sirius_repo_url} repo
-cd repo
+# Clone repository (works with both branches and tags)
+if ! git clone --branch ${demo_branch} ${sirius_repo_url} repo; then
+    echo "❌ Failed to clone branch/tag ${demo_branch}, trying to clone main and checkout tag..."
+    git clone ${sirius_repo_url} repo
+    cd repo
+    git checkout ${demo_branch} || {
+        echo "❌ Failed to checkout ${demo_branch}, using main branch"
+        git checkout main
+    }
+else
+    cd repo
+fi
+
+# Verify what we checked out
+echo "✅ Repository cloned successfully"
+echo "Current commit: $(git rev-parse HEAD)"
+echo "Current branch/tag: $(git describe --tags --exact-match 2>/dev/null || git branch --show-current)"
 
 # Create symlink to go-api for API build
 echo "🔗 Creating symlink to go-api..."
@@ -147,20 +162,57 @@ timeout 120 bash -c 'until docker compose exec sirius-postgres pg_isready -U pos
 echo "Waiting for RabbitMQ..."
 timeout 120 bash -c 'until docker compose exec sirius-rabbitmq rabbitmqctl status; do sleep 3; done' || echo "RabbitMQ timeout"
 
-# Check API build status
-echo "Checking API service build status..."
-docker compose logs sirius-api | tail -20
+# Check all service build status
+echo "📊 Checking service build status..."
+echo "=== All Service Logs (last 30 lines) ==="
+docker compose logs --tail=30
+
+# Check API build status specifically
+echo ""
+echo "=== API Service Logs (last 50 lines) ==="
+docker compose logs sirius-api | tail -50
+
+# Check container status
+echo ""
+echo "=== Container Status ==="
+docker compose ps -a
+
+# Check for failed containers
+FAILED_CONTAINERS=$(docker compose ps -a --format "{{.Name}}\t{{.Status}}" | grep -i "exited\|failed" || true)
+if [ -n "$FAILED_CONTAINERS" ]; then
+    echo "❌ Found failed containers:"
+    echo "$FAILED_CONTAINERS"
+    echo ""
+    echo "=== Failed Container Logs ==="
+    echo "$FAILED_CONTAINERS" | awk '{print $1}' | while read container; do
+        echo "--- Logs for $container ---"
+        docker compose logs "$container" | tail -50
+    done
+fi
 
 # Wait for API to be ready
-echo "Waiting for API service..."
+echo ""
+echo "⏳ Waiting for API service..."
 timeout 180 bash -c 'until curl -f http://localhost:9001/health; do sleep 5; done' || echo "API timeout - checking logs..."
 
-# If API failed, show logs
+# If API failed, show comprehensive logs
 if ! curl -f http://localhost:9001/health 2>/dev/null; then
-    echo "❌ API service failed to start. Checking logs..."
-    docker compose logs sirius-api | tail -50
-    echo "Checking all service status..."
-    docker compose ps
+    echo "❌ API service failed to start. Comprehensive diagnostics..."
+    echo ""
+    echo "=== Disk Space ==="
+    df -h
+    echo ""
+    echo "=== Memory Usage ==="
+    free -h
+    echo ""
+    echo "=== Docker System Info ==="
+    docker system df
+    echo ""
+    echo "=== All Service Logs (last 100 lines) ==="
+    docker compose logs --tail=100
+    echo ""
+    echo "=== Container Status (detailed) ==="
+    docker compose ps -a
 fi
 
 # Show running containers
