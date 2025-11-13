@@ -10,7 +10,7 @@ subnet_id = "subnet-xxxxxxxxxxxxxxxxx" # Replace with your public subnet ID
 
 # Instance Configuration
 instance_type      = "t3.small"  # Cost-optimized for demo (2 vCPU, 2GB RAM)
-root_volume_size   = 20          # Reduced for cost savings
+root_volume_size   = 40          # Minimum 40GB required for Docker builds (UI build needs ~15GB)
 
 # Access Control
 # Use 0.0.0.0/0 for public demo, or restrict to specific IPs
