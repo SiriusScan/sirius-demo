@@ -97,7 +97,7 @@ jobs:
             -var="subnet_id=subnet-d31ffe8e" \
             -var="aws_region=us-west-2" \
             -var="instance_type=${{ env.DEMO_INSTANCE_TYPE }}" \
-            -var="root_volume_size=40" \
+            -var="root_volume_size=30" \
             -var='public_key=${{ secrets.DEMO_SSH_PUBLIC_KEY }}' \
             -no-color -out=tfplan
         continue-on-error: true
@@ -148,7 +148,7 @@ jobs:
           -var="subnet_id=subnet-d31ffe8e" \
           -var="aws_region=us-west-2" \
           -var="instance_type=${{ env.DEMO_INSTANCE_TYPE }}" \
-          -var="root_volume_size=40" \
+          -var="root_volume_size=30" \
           -var='public_key=${{ secrets.DEMO_SSH_PUBLIC_KEY }}' \
           -auto-approve
 

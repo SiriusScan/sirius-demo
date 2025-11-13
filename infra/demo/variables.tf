@@ -11,9 +11,9 @@ variable "instance_type" {
 }
 
 variable "root_volume_size" {
-  description = "Root EBS volume size in GB (minimum 40GB recommended for Docker builds)"
+  description = "Root EBS volume size in GB (minimum 30GB recommended for Docker builds)"
   type        = number
-  default     = 40
+  default     = 30
 }
 
 variable "vpc_id" {
