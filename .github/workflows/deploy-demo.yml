@@ -19,24 +19,18 @@ on:
         default: "false"
         type: boolean
 
-  # Trigger from main Sirius repository when sirius-demo branch is updated
+  # Trigger from main Sirius repository when code changes
+  # This acts as a canary - demo rebuilds on every Sirius main branch update
   repository_dispatch:
-    types: [sirius-demo-updated]
+    types: [sirius-demo-updated, sirius-main-updated]
 
-  # Trigger on changes to infrastructure or demo code
+  # Trigger on ANY push to main branch (no path filters)
+  # This ensures demo rebuilds whenever demo repo code changes
+  # Acts as a canary for bad pushes to main
   push:
     branches: [main]
-    paths:
-      - "infra/**"
-      - "scripts/**"
-      - "data/**"
-      - "fixtures/**"
-      - ".github/workflows/**"
-      - "README.md"
-      - "QUICKSTART.md"
-      - "PROJECT_PLAN.md"
 
-  # Trigger on pull requests to main
+  # Trigger on pull requests to main (for testing infrastructure changes)
   pull_request:
     branches: [main]
     paths:
