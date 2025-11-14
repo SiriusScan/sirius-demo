@@ -41,7 +41,7 @@ variable "sirius_repo_url" {
 variable "demo_branch" {
   description = "Branch or tag to checkout from Sirius repository for demo deployment (e.g., 'demo', 'main', 'v0.4.1')"
   type        = string
-  default     = "v0.4.1"
+  default     = "main"
 }
 
 variable "public_key" {
