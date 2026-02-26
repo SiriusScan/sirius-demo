@@ -1,0 +1,223 @@
+# SiriusScan Demo - Standalone Docker Compose
+# Pulls prebuilt images from GHCR. No source clone needed.
+# Usage: docker compose -f docker-compose.demo.yml up -d
+
+name: sirius
+
+services:
+  sirius-rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    container_name: sirius-rabbitmq
+    hostname: sirius-rabbitmq
+    environment:
+      VALKEY_HOST: sirius-valkey
+      VALKEY_PORT: "6379"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  sirius-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    container_name: sirius-postgres
+    hostname: sirius-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-demo_password}
+      POSTGRES_DB: ${POSTGRES_DB:-sirius}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "PGPASSWORD=\"$${POSTGRES_PASSWORD}\" psql -h 127.0.0.1 -U \"$${POSTGRES_USER:-postgres}\" -d \"$${POSTGRES_DB:-sirius}\" -c 'SELECT 1;' >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "0.5"
+
+  sirius-valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    container_name: sirius-valkey
+    hostname: sirius-valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  sirius-ui:
+    image: ghcr.io/siriusscan/sirius-ui:${IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: sirius-ui
+    hostname: sirius-ui
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - SKIP_ENV_VALIDATION=1
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-demo_password}@sirius-postgres:5432/${POSTGRES_DB:-sirius}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
+      - SIRIUS_API_URL=http://sirius-api:9001
+      - NEXT_PUBLIC_SIRIUS_API_URL=${NEXT_PUBLIC_SIRIUS_API_URL:-http://localhost:9001}
+      - DISCORD_CLIENT_ID=dummy_client_id
+      - DISCORD_CLIENT_SECRET=dummy_client_secret
+      - SIRIUS_API_KEY=${SIRIUS_API_KEY}
+    depends_on:
+      sirius-postgres:
+        condition: service_healthy
+      sirius-api:
+        condition: service_healthy
+      sirius-rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+
+  sirius-api:
+    image: ghcr.io/siriusscan/sirius-api:${IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: sirius-api
+    hostname: sirius-api
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    environment:
+      - GO_ENV=production
+      - API_PORT=9001
+      - CORS_ALLOWED_ORIGINS=*
+      - POSTGRES_HOST=sirius-postgres
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-demo_password}
+      - POSTGRES_DB=${POSTGRES_DB:-sirius}
+      - POSTGRES_PORT=5432
+      - VALKEY_HOST=sirius-valkey
+      - VALKEY_PORT=6379
+      - RABBITMQ_URL=amqp://guest:guest@sirius-rabbitmq:5672/
+      - LOG_LEVEL=error
+      - SIRIUS_API_KEY=${SIRIUS_API_KEY}
+    depends_on:
+      sirius-postgres:
+        condition: service_healthy
+      sirius-rabbitmq:
+        condition: service_healthy
+      sirius-valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+
+  sirius-engine:
+    image: ghcr.io/siriusscan/sirius-engine:${IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: sirius-engine
+    hostname: sirius-engine
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW
+    ports:
+      - "5174:5174"
+      - "50051:50051"
+    environment:
+      - GO_ENV=production
+      - ENGINE_MAIN_PORT=5174
+      - GRPC_AGENT_PORT=50051
+      - POSTGRES_HOST=sirius-postgres
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-demo_password}
+      - POSTGRES_DB=${POSTGRES_DB:-sirius}
+      - POSTGRES_PORT=5432
+      - VALKEY_HOST=sirius-valkey
+      - VALKEY_PORT=6379
+      - RABBITMQ_URL=amqp://guest:guest@sirius-rabbitmq:5672/
+      - SIRIUS_API_URL=http://sirius-api:9001
+      - API_BASE_URL=http://sirius-api:9001
+      - AGENT_ID=sirius-engine
+      - HOST_ID=sirius-engine
+      - ENABLE_SCRIPTING=true
+      - LOG_LEVEL=info
+      - SIRIUS_API_KEY=${SIRIUS_API_KEY}
+    depends_on:
+      sirius-rabbitmq:
+        condition: service_healthy
+      sirius-postgres:
+        condition: service_healthy
+      sirius-valkey:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-lc",
+          "echo > /dev/tcp/127.0.0.1/50051",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
+
+volumes:
+  postgres_data:
+    driver: local
+  valkey_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+
+networks:
+  default:
+    name: sirius
+    driver: bridge

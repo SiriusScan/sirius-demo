@@ -171,7 +171,7 @@ jobs:
           # This is a simplified cost check - in production you'd use Cost Explorer API
           echo "📊 Cost monitoring for $CURRENT_MONTH"
           echo "Note: Detailed cost analysis requires Cost Explorer API access"
-          echo "Estimated monthly cost for t2.large: ~$40-55"
+          echo "Estimated monthly cost for t3.small: ~$15-20"
 
           # Check for any cost anomalies (simplified)
           INSTANCE_COUNT="${{ steps.find_instances.outputs.instances_found == 'true' && '1' || '0' }}"

@@ -14,31 +14,31 @@ on:
         default: false
         type: boolean
       force_rebuild:
-        description: "Force rebuild even if no changes"
+        description: "Force full destroy/recreate even if instance is healthy"
         required: false
         default: false
         type: boolean
+      image_tag:
+        description: "GHCR image tag to deploy (default: latest)"
+        required: false
+        default: "latest"
+        type: string
 
-  # Trigger from main Sirius repository when code changes
-  # This acts as a canary - demo rebuilds on every Sirius main branch update
+  # Trigger from main Sirius repository
   repository_dispatch:
     types: [sirius-demo-updated, sirius-main-updated]
 
-  # Trigger on ANY push to main branch (no path filters)
-  # This ensures demo rebuilds whenever demo repo code changes
-  # Acts as a canary for bad pushes to main
+  # Trigger on pushes to main branch
   push:
     branches: [main]
 
-  # Trigger on pull requests to main (for testing infrastructure changes)
+  # Terraform / infra validation on PRs
   pull_request:
     branches: [main]
     paths:
       - "infra/**"
-      - "scripts/**"
-      - "data/**"
-      - "fixtures/**"
-      - ".github/workflows/**"
+      - "docker-compose.demo.yml"
+      - ".github/workflows/deploy-demo.yml"
 
 env:
   AWS_REGION: us-west-2
@@ -46,10 +46,223 @@ env:
   DEMO_INSTANCE_TYPE: t3.medium
 
 jobs:
-  deploy:
-    name: Deploy Demo Environment
+  # ── Decide: full rebuild vs fast update ──────────────────────────────────
+  preflight:
+    name: Preflight — check existing instance
     runs-on: ubuntu-latest
+    outputs:
+      instance_healthy: ${{ steps.check.outputs.instance_healthy }}
+      instance_id: ${{ steps.check.outputs.instance_id }}
+      public_ip: ${{ steps.check.outputs.public_ip }}
+      strategy: ${{ steps.decide.outputs.strategy }}
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "image_tag=${{ github.event.inputs.image_tag || 'latest' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check existing demo instance health
+        id: check
+        run: |
+          INSTANCE=$(aws ec2 describe-instances \
+            --region "$AWS_REGION" \
+            --filters "Name=tag:Project,Values=SiriusDemo" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].[InstanceId,PublicIpAddress]' \
+            --output text | head -1)
+
+          if [ -z "$INSTANCE" ]; then
+            echo "instance_healthy=false" >> "$GITHUB_OUTPUT"
+            echo "No running demo instance found"
+            exit 0
+          fi
+
+          INSTANCE_ID=$(echo "$INSTANCE" | awk '{print $1}')
+          PUBLIC_IP=$(echo "$INSTANCE" | awk '{print $2}')
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+          echo "public_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
+
+          if curl -sf --max-time 10 "http://$PUBLIC_IP:9001/health" > /dev/null 2>&1; then
+            echo "instance_healthy=true" >> "$GITHUB_OUTPUT"
+            echo "Instance $INSTANCE_ID is healthy at $PUBLIC_IP"
+          else
+            echo "instance_healthy=false" >> "$GITHUB_OUTPUT"
+            echo "Instance $INSTANCE_ID is NOT healthy"
+          fi
+
+      - name: Decide deployment strategy
+        id: decide
+        run: |
+          FORCE="${{ github.event.inputs.force_rebuild }}"
+          HEALTHY="${{ steps.check.outputs.instance_healthy }}"
+          EVENT="${{ github.event_name }}"
+
+          # Force rebuild requested
+          if [ "$FORCE" = "true" ]; then
+            echo "strategy=full" >> "$GITHUB_OUTPUT"
+            echo "Strategy: full (force_rebuild=true)"
+            exit 0
+          fi
+
+          # Scheduled runs always do a full deploy
+          if [ "$EVENT" = "schedule" ]; then
+            echo "strategy=full" >> "$GITHUB_OUTPUT"
+            echo "Strategy: full (scheduled)"
+            exit 0
+          fi
+
+          # If instance is healthy, do a fast update
+          if [ "$HEALTHY" = "true" ]; then
+            echo "strategy=fast" >> "$GITHUB_OUTPUT"
+            echo "Strategy: fast (instance healthy)"
+          else
+            echo "strategy=full" >> "$GITHUB_OUTPUT"
+            echo "Strategy: full (no healthy instance)"
+          fi
+
+  # ── Fast update: pull new images on existing instance ────────────────────
+  fast-update:
+    name: Fast Update (in-place image pull)
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.strategy == 'fast'
+    timeout-minutes: 10
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Pull new images and restart via SSM
+        id: update
+        run: |
+          INSTANCE_ID="${{ needs.preflight.outputs.instance_id }}"
+          IMAGE_TAG="${{ needs.preflight.outputs.image_tag }}"
+
+          echo "Sending update command to $INSTANCE_ID (tag: $IMAGE_TAG)..."
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --timeout-seconds 300 \
+            --parameters "commands=[
+              \"cd /opt/sirius/demo\",
+              \"sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=$IMAGE_TAG/' .env\",
+              \"docker compose -f docker-compose.demo.yml pull\",
+              \"docker compose -f docker-compose.demo.yml up -d --remove-orphans\",
+              \"echo 'Update complete — waiting for API health...'\",
+              \"timeout 120 bash -c 'until curl -sf http://localhost:9001/health > /dev/null; do sleep 5; done'\",
+              \"docker compose -f docker-compose.demo.yml ps\"
+            ]" \
+            --region "$AWS_REGION" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM command: $COMMAND_ID"
+
+          # Wait for completion
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --region "$AWS_REGION" \
+              --query "Status" \
+              --output text 2>/dev/null || echo "Pending")
+
+            echo "  [$i/30] Status: $STATUS"
+
+            if [ "$STATUS" = "Success" ]; then
+              echo "Fast update succeeded"
+
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --region "$AWS_REGION" \
+                --query "StandardOutputContent" \
+                --output text | tail -30
+
+              exit 0
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "Fast update failed ($STATUS)"
+
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --region "$AWS_REGION" \
+                --query "StandardErrorContent" \
+                --output text | tail -30
+
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "Timed out waiting for SSM command"
+          exit 1
+
+      - name: Verify health after update
+        run: |
+          PUBLIC_IP="${{ needs.preflight.outputs.public_ip }}"
+
+          for i in $(seq 1 12); do
+            if curl -sf --max-time 10 "http://$PUBLIC_IP:9001/health" > /dev/null; then
+              echo "API healthy"
+              break
+            fi
+            echo "Waiting for API... ($i/12)"
+            sleep 10
+          done
+
+          curl -sf "http://$PUBLIC_IP:9001/health" || { echo "API not healthy after update"; exit 1; }
+
+          if curl -sf --max-time 10 -I "http://$PUBLIC_IP:3000" > /dev/null; then
+            echo "UI healthy"
+          else
+            echo "UI not healthy after update"
+            exit 1
+          fi
+
+          echo "Fast update verified — all services healthy"
+
+  # ── Full deploy: terraform destroy + apply ───────────────────────────────
+  full-deploy:
+    name: Full Deploy (terraform destroy/apply)
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.strategy == 'full'
     timeout-minutes: 30
+    outputs:
+      instance_id: ${{ steps.deploy.outputs.instance_id }}
+      public_ip: ${{ steps.deploy.outputs.public_ip }}
+      api_key: ${{ steps.deploy.outputs.api_key }}
 
     permissions:
       id-token: write
@@ -73,72 +286,26 @@ jobs:
         with:
           terraform_version: 1.6.0
 
-      - name: Terraform Format Check
-        id: fmt
-        run: terraform -chdir=${{ env.TERRAFORM_DIR }} fmt -check -recursive
-        continue-on-error: true
-
       - name: Terraform Init
-        id: init
         run: terraform -chdir=${{ env.TERRAFORM_DIR }} init
 
       - name: Terraform Validate
-        id: validate
         run: terraform -chdir=${{ env.TERRAFORM_DIR }} validate -no-color
 
-      - name: Terraform Plan
-        id: plan
-        run: |
-          terraform -chdir=${{ env.TERRAFORM_DIR }} plan \
-            -var="vpc_id=vpc-416eeb39" \
-            -var="subnet_id=subnet-d31ffe8e" \
-            -var="aws_region=us-west-2" \
-            -var="instance_type=${{ env.DEMO_INSTANCE_TYPE }}" \
-            -var="root_volume_size=30" \
-            -var='public_key=${{ secrets.DEMO_SSH_PUBLIC_KEY }}' \
-            -no-color -out=tfplan
-        continue-on-error: true
-
-      - name: Check for changes
-        id: changes
-        run: |
-          if [ -f tfplan ]; then
-            if terraform show -no-color tfplan | grep -q "No changes"; then
-              echo "changes=false" >> $GITHUB_OUTPUT
-            else
-              echo "changes=true" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "changes=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Skip deployment if no changes
-        if: steps.changes.outputs.changes == 'false' && github.event_name != 'workflow_dispatch'
-        run: |
-          echo "No infrastructure changes detected. Skipping deployment."
-          exit 0
-
       - name: Destroy existing infrastructure
-        id: destroy
         run: |
-          echo "🗑️ Destroying existing demo infrastructure..."
-
-          # Use comprehensive cleanup script
           chmod +x scripts/cleanup-aws-resources.sh
           ./scripts/cleanup-aws-resources.sh
-
-          echo "✅ Cleanup completed!"
         continue-on-error: true
 
       - name: Wait for cleanup
-        run: |
-          echo "⏳ Waiting 30 seconds for AWS cleanup..."
-          sleep 30
+        run: sleep 30
 
       - name: Deploy new infrastructure
         id: deploy
         run: |
-          echo "🚀 Deploying new demo infrastructure..."
+          IMAGE_TAG="${{ needs.preflight.outputs.image_tag }}"
+
           terraform -chdir=${{ env.TERRAFORM_DIR }} init
           terraform -chdir=${{ env.TERRAFORM_DIR }} apply \
             -var="vpc_id=vpc-416eeb39" \
@@ -146,243 +313,119 @@ jobs:
             -var="aws_region=us-west-2" \
             -var="instance_type=${{ env.DEMO_INSTANCE_TYPE }}" \
             -var="root_volume_size=30" \
+            -var="image_tag=$IMAGE_TAG" \
             -var='public_key=${{ secrets.DEMO_SSH_PUBLIC_KEY }}' \
             -auto-approve
 
-          # Get instance details
           INSTANCE_ID=$(terraform -chdir=${{ env.TERRAFORM_DIR }} output -raw instance_id)
           PUBLIC_IP=$(terraform -chdir=${{ env.TERRAFORM_DIR }} output -raw instance_public_ip)
 
-          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
-          echo "ui_url=http://$PUBLIC_IP:3000" >> $GITHUB_OUTPUT
-          echo "api_url=http://$PUBLIC_IP:9001" >> $GITHUB_OUTPUT
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+          echo "public_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
+          echo "ui_url=http://$PUBLIC_IP:3000" >> "$GITHUB_OUTPUT"
+          echo "api_url=http://$PUBLIC_IP:9001" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for instance to be ready
-        run: |
-          echo "⏳ Waiting for instance to be ready..."
-          sleep 60
+      - name: Wait for instance bootstrap
+        run: sleep 60
 
-      - name: Collect diagnostics before health check
+      - name: Retrieve bootstrap logs
         if: always()
         run: |
-          echo "📊 Collecting system diagnostics..."
-          PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
           INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
-          
-          # Try to get bootstrap logs via SSM if possible
-          echo "Attempting to retrieve bootstrap logs..."
           aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --parameters 'commands=["tail -200 /var/log/sirius-bootstrap.log"]' \
-            --region us-west-2 \
-            --output text \
-            --query "Command.CommandId" > /tmp/command-id.txt 2>&1 || echo "SSM command failed, will check logs later"
-          
-          # Wait a moment for command to execute
-          sleep 5
-          
-          # Try to get command output
-          if [ -f /tmp/command-id.txt ] && [ -s /tmp/command-id.txt ]; then
-            COMMAND_ID=$(cat /tmp/command-id.txt | head -1)
-            if [ -n "$COMMAND_ID" ] && [ "$COMMAND_ID" != "None" ]; then
-              echo "Retrieving command output..."
+            --region "$AWS_REGION" \
+            --output text --query "Command.CommandId" > /tmp/cmd-id.txt 2>&1 || true
+
+          sleep 10
+
+          if [ -s /tmp/cmd-id.txt ]; then
+            CMD_ID=$(head -1 /tmp/cmd-id.txt)
+            if [ -n "$CMD_ID" ] && [ "$CMD_ID" != "None" ]; then
               aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
+                --command-id "$CMD_ID" \
                 --instance-id "$INSTANCE_ID" \
-                --region us-west-2 \
+                --region "$AWS_REGION" \
                 --query "StandardOutputContent" \
-                --output text 2>&1 | head -100 || echo "Could not retrieve SSM output"
+                --output text 2>&1 | tail -100 || true
             fi
           fi
-          
-          echo "Diagnostics collection complete"
 
       - name: Health check
         id: health
         run: |
-          echo "🔍 Performing health checks..."
           PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
           INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
 
-          # Wait for API to be ready (up to 20 minutes with longer intervals)
-          for i in {1..60}; do
-            if curl -f -s http://$PUBLIC_IP:9001/health > /dev/null; then
-              echo "✅ API is healthy"
+          for i in $(seq 1 60); do
+            if curl -sf "http://$PUBLIC_IP:9001/health" > /dev/null; then
+              echo "API is healthy"
               break
             fi
-            echo "⏳ Waiting for API... (attempt $i/60)"
-            
-            # Every 10 attempts, try to get some diagnostics
-            if [ $((i % 10)) -eq 0 ]; then
-              echo "📊 Checking system status (attempt $i)..."
-              # Try to get Docker logs via SSM
-              aws ssm send-command \
-                --instance-ids "$INSTANCE_ID" \
-                --document-name "AWS-RunShellScript" \
-                --parameters 'commands=["cd /opt/sirius/repo && docker compose ps -a && docker compose logs --tail=30"]' \
-                --region us-west-2 \
-                --output text \
-                --query "Command.CommandId" > /tmp/docker-command-id.txt 2>&1 || true
-            fi
+            echo "Waiting for API... ($i/60)"
             sleep 20
           done
 
-          # Final API check
-          if ! curl -f -s http://$PUBLIC_IP:9001/health > /dev/null; then
-            echo "❌ API health check failed after 20 minutes"
-            echo "Checking API logs for debugging..."
-            curl -v http://$PUBLIC_IP:9001/health || true
-            
-            # Try to get comprehensive diagnostics
-            echo ""
-            echo "📊 Attempting to retrieve comprehensive diagnostics..."
-            INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
-            
-            # Get Docker status and logs
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --parameters 'commands=["cd /opt/sirius/repo && echo \"=== Container Status ===\" && docker compose ps -a && echo \"\" && echo \"=== API Logs ===\" && docker compose logs sirius-api --tail=100 && echo \"\" && echo \"=== All Logs ===\" && docker compose logs --tail=50"]' \
-              --region us-west-2 \
-              --output text \
-              --query "Command.CommandId" > /tmp/final-command-id.txt 2>&1 || true
-            
-            sleep 10
-            
-            if [ -f /tmp/final-command-id.txt ] && [ -s /tmp/final-command-id.txt ]; then
-              FINAL_CMD_ID=$(cat /tmp/final-command-id.txt | head -1)
-              if [ -n "$FINAL_CMD_ID" ] && [ "$FINAL_CMD_ID" != "None" ]; then
-                echo "Retrieving final diagnostics..."
-                aws ssm get-command-invocation \
-                  --command-id "$FINAL_CMD_ID" \
-                  --instance-id "$INSTANCE_ID" \
-                  --region us-west-2 \
-                  --query "StandardOutputContent" \
-                  --output text 2>&1 | head -200 || echo "Could not retrieve diagnostics"
-              fi
-            fi
-            
+          curl -sf "http://$PUBLIC_IP:9001/health" || { echo "API health check failed after 20 min"; exit 1; }
+
+          if curl -sf -I "http://$PUBLIC_IP:3000" > /dev/null; then
+            echo "UI is healthy"
+          else
+            echo "UI health check failed"
             exit 1
           fi
 
-          # Check UI
-          if curl -f -s -I http://$PUBLIC_IP:3000 > /dev/null; then
-            echo "✅ UI is healthy"
-          else
-            echo "❌ UI health check failed"
-            exit 1
-          fi
+      - name: Retrieve API key from instance
+        id: get_api_key
+        if: steps.health.outcome == 'success'
+        run: |
+          INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["grep ^SIRIUS_API_KEY= /opt/sirius/demo/.env | cut -d= -f2"]' \
+            --region "$AWS_REGION" \
+            --query "Command.CommandId" --output text)
+
+          sleep 5
+
+          API_KEY=$(aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --query "StandardOutputContent" --output text | tr -d '[:space:]')
+
+          echo "::add-mask::$API_KEY"
+          echo "api_key=$API_KEY" >> "$GITHUB_OUTPUT"
 
       - name: Update DNS
         if: steps.health.outcome == 'success'
         run: |
-          echo "🌐 Updating DNS record for sirius.opensecurity.com..."
-          ELASTIC_IP="${{ steps.deploy.outputs.elastic_ip }}"
-          DOMAIN="opensecurity.com"
-          SUBDOMAIN="sirius"
-
-          # Run DNS update script
           chmod +x scripts/update-dns.sh
-          ./scripts/update-dns.sh $ELASTIC_IP $DOMAIN $SUBDOMAIN || echo "⚠️ DNS update failed, but deployment continues"
+          ./scripts/update-dns.sh "${{ steps.deploy.outputs.public_ip }}" opensecurity.com sirius || echo "DNS update failed, continuing"
 
       - name: Seed demo data
         if: github.event.inputs.skip_seeding != 'true' && steps.health.outcome == 'success'
         run: |
-          echo "🌱 Seeding demo data..."
           PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
+          API_KEY="${{ steps.get_api_key.outputs.api_key }}"
 
-          # Wait a bit more for services to be fully ready
           sleep 30
 
-          # Run seeding script
           chmod +x scripts/seed_demo.sh
-          ./scripts/seed_demo.sh $PUBLIC_IP || echo "⚠️ Data seeding failed, but deployment continues"
+          ./scripts/seed_demo.sh "http://$PUBLIC_IP:9001" "$API_KEY" || echo "Data seeding failed, continuing"
 
-      - name: Generate deployment summary
-        id: summary
+      - name: Deployment summary
+        if: always()
         run: |
-          echo "📊 Generating deployment summary..."
-
           PUBLIC_IP="${{ steps.deploy.outputs.public_ip }}"
           INSTANCE_ID="${{ steps.deploy.outputs.instance_id }}"
-
-          cat << EOF > deployment-summary.md
-          # SiriusScan Demo Deployment Summary
-
-          **Deployment Time**: $(date -u)
-          **Trigger**: ${{ github.event_name }}
-          **Commit**: ${{ github.sha }}
-          **Branch**: ${{ github.ref_name }}
-
-          ## Instance Details
-          - **Instance ID**: \`$INSTANCE_ID\`
-          - **Public IP**: \`$PUBLIC_IP\`
-          - **Instance Type**: ${{ env.DEMO_INSTANCE_TYPE }}
-          - **Region**: ${{ env.AWS_REGION }}
-
-          ## Access URLs
-          - **UI**: http://$PUBLIC_IP:3000
-          - **API**: http://$PUBLIC_IP:9001
-          - **Health Check**: http://$PUBLIC_IP:9001/health
-
-          ## Domain Access (Static IP)
-          - **UI**: http://sirius.opensecurity.com:3000
-          - **API**: http://sirius.opensecurity.com:9001
-          - **Elastic IP**: ${{ steps.deploy.outputs.elastic_ip }}
-
-          ## SSM Access
-          \`\`\`bash
-          aws ssm start-session --target $INSTANCE_ID --region ${{ env.AWS_REGION }}
-          \`\`\`
-
-          ## Status
-          - **Infrastructure**: ✅ Deployed
-          - **API Health**: ✅ Responding
-          - **UI Health**: ✅ Responding
-          - **Data Seeding**: ${{ github.event.inputs.skip_seeding == 'true' && '⏭️ Skipped' || '✅ Completed' }}
-
-          ## Next Steps
-          1. Test the demo at the URLs above
-          2. Verify all services are working correctly
-          3. Check logs if any issues are found
-
-          ---
-          *This deployment was created automatically by GitHub Actions*
-          EOF
-
-      - name: Upload deployment summary
-        uses: actions/upload-artifact@v4
-        with:
-          name: deployment-summary
-          path: deployment-summary.md
-
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const summary = fs.readFileSync('deployment-summary.md', 'utf8');
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: summary
-            });
-
-      - name: Deployment success notification
-        if: success()
-        run: |
-          echo "🎉 SiriusScan Demo deployment completed successfully!"
-          echo "UI: ${{ steps.deploy.outputs.ui_url }}"
-          echo "API: ${{ steps.deploy.outputs.api_url }}"
-
-      - name: Deployment failure notification
-        if: failure()
-        run: |
-          echo "❌ SiriusScan Demo deployment failed!"
-          echo "Check the logs above for details."
-          echo "Instance ID: ${{ steps.deploy.outputs.instance_id || 'N/A' }}"
+          echo "===== Deployment Summary ====="
+          echo "Instance ID: $INSTANCE_ID"
+          echo "Public IP:   $PUBLIC_IP"
+          echo "UI:  http://$PUBLIC_IP:3000"
+          echo "API: http://$PUBLIC_IP:9001"
+          echo "=============================="

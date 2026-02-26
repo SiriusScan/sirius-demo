@@ -212,7 +212,7 @@ aws iam list-roles --max-items 1
 
 ## Cost Considerations
 
-- **EC2 Instances**: ~$40-55/month per t2.large instance
+- **EC2 Instances**: ~$15/month per t3.small instance
 - **EBS Storage**: ~$2.40/month for 30GB
 - **Data Transfer**: ~$1-5/month
 - **S3/DynamoDB**: <$1/month for Terraform state

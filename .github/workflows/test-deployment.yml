@@ -189,7 +189,7 @@ jobs:
           ## Configuration Summary
           - **AWS Region**: ${{ env.AWS_REGION }}
           - **Terraform Directory**: ${{ env.TERRAFORM_DIR }}
-          - **Instance Type**: t2.large
+          - **Instance Type**: t3.small
 
           ## Next Steps
           1. Configuration is ready for deployment

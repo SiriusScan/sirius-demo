@@ -11,7 +11,7 @@ variable "instance_type" {
 }
 
 variable "root_volume_size" {
-  description = "Root EBS volume size in GB (minimum 30GB recommended for Docker builds)"
+  description = "Root EBS volume size in GB"
   type        = number
   default     = 30
 }
@@ -32,16 +32,10 @@ variable "allowed_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
-variable "sirius_repo_url" {
-  description = "SiriusScan repository URL to clone"
+variable "image_tag" {
+  description = "GHCR image tag to deploy (e.g. 'latest', 'v0.5.0')"
   type        = string
-  default     = "https://github.com/SiriusScan/Sirius.git"
-}
-
-variable "demo_branch" {
-  description = "Branch or tag to checkout from Sirius repository for demo deployment (e.g., 'demo', 'main', 'v0.4.1')"
-  type        = string
-  default     = "main"
+  default     = "latest"
 }
 
 variable "public_key" {
@@ -67,4 +61,3 @@ variable "common_tags" {
     TTL         = "Demo"
   }
 }
-

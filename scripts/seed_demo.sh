@@ -1,11 +1,17 @@
 #!/bin/bash
 
 # seed_demo.sh - Seed demo data into SiriusScan API
-# Usage: ./seed_demo.sh <api_url>
+# Usage: ./seed_demo.sh <api_url> [api_key]
 
 set -e
 
 API_URL="${1:-http://localhost:9001}"
+API_KEY="${2:-${SIRIUS_API_KEY:-}}"
+
+if [ -z "$API_KEY" ]; then
+    echo "Warning: No API key provided. Authenticated endpoints will fail."
+    echo "Usage: $0 <api_url> <api_key>"
+fi
 FIXTURES_DIR="$(dirname "$0")/../fixtures"
 INDEX_FILE="$FIXTURES_DIR/index.json"
 LOG_FILE="/var/log/sirius/seed-demo.log"
@@ -91,6 +97,7 @@ for i in $(seq 0 $((FIXTURE_COUNT - 1))); do
         HTTP_CODE=$(curl -s -o /tmp/seed_response.json -w "%{http_code}" \
             -X POST \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: $API_KEY" \
             -d @"$FIXTURE_PATH" \
             "$API_URL/host" \
             --connect-timeout 10 \
@@ -137,7 +144,7 @@ echo ""
 
 # Verify hosts in database
 echo "🔍 Verifying seeded data..."
-TOTAL_HOSTS=$(curl -s "$API_URL/host" | jq '. | length' 2>/dev/null || echo "unknown")
+TOTAL_HOSTS=$(curl -s -H "X-API-Key: $API_KEY" "$API_URL/host" | jq '. | length' 2>/dev/null || echo "unknown")
 echo "Total hosts in database: $TOTAL_HOSTS"
 echo ""
 

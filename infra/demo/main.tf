@@ -203,9 +203,8 @@ resource "aws_instance" "demo" {
   }
 
   user_data = templatefile("${path.module}/user_data.sh", {
-    sirius_repo_url = var.sirius_repo_url
-    demo_branch     = var.demo_branch
-    elastic_ip      = aws_eip.demo.public_ip
+    elastic_ip = aws_eip.demo.public_ip
+    image_tag  = var.image_tag
   })
 
   # Ensure instance is replaced when user data changes

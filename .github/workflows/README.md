@@ -242,10 +242,10 @@ aws ssm start-session --target <instance-id> --region us-east-1
 
 ### Estimated Costs
 
-- **t2.large Instance**: ~$40-55/month
+- **t3.small Instance**: ~$15/month
 - **EBS Storage**: ~$2.40/month
 - **Data Transfer**: ~$1-5/month
-- **Total**: ~$45-65/month per instance
+- **Total**: ~$18-22/month per instance
 
 ### Cost Optimization
 
